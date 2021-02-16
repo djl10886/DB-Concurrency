@@ -102,7 +102,7 @@ void Benchmark(const vector<LoadGen*>& lg) {
         // Start specified number of txns running.
         for (int i = 0; i < active_txns; i++)
           p->NewTxnRequest(lg[exp]->NewTxn());
-// cout<<"reached here"<<endl;
+
         // Keep 100 active txns at all times for the first full second.
         while (GetTime() < start + 0.5) {
           Txn* txn = p->GetTxnResult();

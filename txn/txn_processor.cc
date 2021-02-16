@@ -72,13 +72,13 @@ void TxnProcessor::NewTxnRequest(Txn* txn) {
 
 Txn* TxnProcessor::GetTxnResult() {
   Txn* txn;
-  cout<<"started getting result"<<endl;
+  // cout<<"started getting result"<<endl;
   while (!txn_results_.Pop(&txn)) {
     // No result yet. Wait a bit before trying again (to reduce contention on
     // atomic queues).
     sleep(0.000001);
   }
-  cout<<"finished getting result"<<endl;
+  // cout<<"finished getting result"<<endl;
   return txn;
 }
 
@@ -520,17 +520,117 @@ void TxnProcessor::RunMVCCScheduler() {
   }
 }
 
+bool CAS(Cluster **p, Cluster* old, Cluster *new_) {
+  if (*p != old)
+    return false;
+  *p = new_;
+  return true;
+}
+
+void Compress(Cluster *rec, Cluster *root) {
+  while (rec->address < root->address) {
+    Cluster *child = rec, *parent = rec->parent;
+    if (parent->address < root->address) {
+      child->lock.Lock();
+      CAS(&(child->parent), parent, root);
+      child->lock.Unlock();
+    }
+    rec = rec->parent;
+  }
+}
+
+Cluster* Find(Cluster *r) {
+  Cluster *root = r;
+  while (root != root->parent)
+    root = root->parent;
+  Compress(r, root);
+  return root;
+}
+
+Cluster* TxnProcessor::Union(Cluster *r1, Cluster *r2) {
+  while(true) {
+    Cluster *parent = Find(r1);
+    Cluster *child = Find(r2);
+    if (parent == child)
+      return parent;
+    else if (parent->address > M and child->address > M)
+      return parent;
+    
+    if (parent->address < child->address) {
+      Cluster *temp = parent;
+      parent = child;
+      child = temp;
+    }
+    child->lock.Lock();
+    if (CAS(&(child->parent), child, parent)) {
+      child->lock.Unlock();
+      return parent;
+    }
+    child->lock.Unlock();
+  }
+}
+
+void TxnProcessor::StrifePrepare(deque<Txn*> *batch, atomic_int *counter) {
+  int size=batch->size();
+  for (int i=0; i<size; i++) {
+    Txn *t = batch->at(i);
+    for (auto it = t->writeset_.begin(); it != t->writeset_.end(); ++it) {
+      Cluster *c = storage_->getCluster(*it);
+      c->parent = c;
+      c->count = 0;
+    }
+    for (auto it = t->readset_.begin(); it != t->readset_.end(); ++it) {
+      Cluster *c = storage_->getCluster(*it);
+      c->parent = c;
+      c->count = 0;
+    }
+  }
+  (*counter)++;
+}
+
 void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
-  // cout<<"batch size: "<<batch->size()<<endl;
+
+  //split batch into equal chunks for prepare, fuse, allocate steps
+  deque<Txn*> chunks[THREAD_COUNT];
+  int size = batch->size();
+  for (int i=0; i<size; i++) {
+    Txn *t = batch->at(i);
+    chunks[i%THREAD_COUNT].push_back(t);
+  }
+
+  atomic_int counter(0);
+  //PREPARE
+  for (int i=0; i<THREAD_COUNT; i++) {
+    tp_.RunTask(new Method<TxnProcessor, void, deque<Txn*>*, atomic_int*>(
+            this,
+            &TxnProcessor::StrifePrepare,
+            &(chunks[i]), &counter));
+  }
+
+  while (counter < THREAD_COUNT);
+  //SPOT
+
+
+  //FUSE
+
+
+  //MERGE
+
+
+  //ALLOCATE
+
+
+
   while (!batch->empty()) {
     Txn *t = batch->front();
     batch->pop_front();
     txn_results_.Push(t);
   }
+
 }
 
 void TxnProcessor::RunStrifeScheduler() {
-  cout<<"started strife"<<endl;
+  // cout<<"started strife"<<endl;
   deque<Txn*> batch;
   double duration = 0.0001;
   double startTime = GetTime();
@@ -538,16 +638,13 @@ void TxnProcessor::RunStrifeScheduler() {
   Txn *txn;
   while (tp_.Active()) {
     if (txn_requests_.Pop(&txn)) {
-      // cout<<"in here"<<endl;
-      if (GetTime() - startTime >= duration) {
-        // cout<<"execute batch"<<endl;
-        StrifeExecuteBatch(&batch);
-        batch.clear();
-        startTime = GetTime();
-      } else {
-        batch.push_back(txn);
-      }
+      batch.push_back(txn);
+    }
+    if (batch.size()>0 && GetTime() - startTime >= duration) {
+      StrifeExecuteBatch(&batch);
+      startTime = GetTime();
     }
   }
+  
 }
 

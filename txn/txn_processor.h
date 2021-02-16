@@ -106,7 +106,11 @@ void GarbageCollection();
 // Strife version of scheduler
 void RunStrifeScheduler();
 
+Cluster* Union(Cluster *r1, Cluster *r2);
+
 void StrifeExecuteBatch(deque<Txn*> *);
+
+void StrifePrepare(deque<Txn*> *, atomic_int *);
 
 
 // Strife specific variables

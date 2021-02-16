@@ -12,6 +12,7 @@ typedef struct cluster {
     uintptr_t address;
     atomic_int count;
     int id;
+    Mutex lock;
 } Cluster;
 
 #endif
