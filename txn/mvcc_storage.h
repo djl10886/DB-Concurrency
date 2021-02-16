@@ -41,6 +41,10 @@ class MVCCStorage : public Storage {
   
   virtual ~MVCCStorage();
 
+  virtual Cluster* getCluster(Key key) {return NULL;}
+
+  virtual uintptr_t getM() {return 0;}
+
  private:
  
   friend class TxnProcessor;

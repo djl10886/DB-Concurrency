@@ -10,6 +10,7 @@
 #include "txn/common.h"
 #include "txn/txn.h"
 #include "utils/mutex.h"
+#include "txn/cluster.h"
 
 using std::tr1::unordered_map;
 using std::deque;
@@ -43,6 +44,10 @@ class Storage {
   virtual void Unlock(Key key) {}
   
   virtual bool CheckWrite (Key key, int txn_unique_id) {return true;}
+
+  virtual Cluster* getCluster(Key key) {return NULL;}
+
+  virtual uintptr_t getM() {return 0;}
    
  private:
  

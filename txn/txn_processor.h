@@ -10,6 +10,7 @@
 #include "txn/lock_manager.h"
 #include "txn/storage.h"
 #include "txn/mvcc_storage.h"
+#include "txn/strife_storage.h"
 #include "txn/txn.h"
 #include "utils/atomic.h"
 #include "utils/static_thread_pool.h"
@@ -30,6 +31,7 @@ enum CCMode {
         OCC = 3,                    // Part 2
         P_OCC = 4,                  // Part 3
         MVCC = 5,                   // Part 4
+        STRIFE = 6,
 };
 
 // Returns a human-readable string naming of the providing mode.
@@ -100,6 +102,17 @@ void MVCCLockWriteKeys(Txn* txn);
 void MVCCUnlockWriteKeys(Txn* txn);
 
 void GarbageCollection();
+
+// Strife version of scheduler
+void RunStrifeScheduler();
+
+void StrifeExecuteBatch(deque<Txn*> *);
+
+
+// Strife specific variables
+int k;
+double alpha;
+uintptr_t M;
 
 // Concurrency control mechanism the TxnProcessor is currently using.
 CCMode mode_;

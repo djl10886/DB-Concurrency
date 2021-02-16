@@ -5,6 +5,8 @@
 
 #include "txn/lock_manager.h"
 
+using namespace std;
+
 // Thread & queue counts for StaticThreadPool initialization.
 #define THREAD_COUNT 8
 
@@ -18,11 +20,19 @@ TxnProcessor::TxnProcessor(CCMode mode)
   // Create the storage
   if (mode_ == MVCC) {
     storage_ = new MVCCStorage();
+  } else if (mode_ == STRIFE) {
+    storage_ = new StrifeStorage();
+    k = 23;
+    alpha = 0.2;
   } else {
     storage_ = new Storage();
   }
   
   storage_->InitStorage();
+
+  if (mode_ == STRIFE)
+    M = storage_->getM();
+
 
   // Start 'RunScheduler()' running.
   cpu_set_t cpuset;
@@ -62,11 +72,13 @@ void TxnProcessor::NewTxnRequest(Txn* txn) {
 
 Txn* TxnProcessor::GetTxnResult() {
   Txn* txn;
+  cout<<"started getting result"<<endl;
   while (!txn_results_.Pop(&txn)) {
     // No result yet. Wait a bit before trying again (to reduce contention on
     // atomic queues).
     sleep(0.000001);
   }
+  cout<<"finished getting result"<<endl;
   return txn;
 }
 
@@ -77,7 +89,8 @@ void TxnProcessor::RunScheduler() {
     case LOCKING_EXCLUSIVE_ONLY: RunLockingScheduler(); break;
     case OCC:                    RunOCCScheduler(); break;
     case P_OCC:                  RunOCCParallelScheduler(); break;
-    case MVCC:                   RunMVCCScheduler();
+    case MVCC:                   RunMVCCScheduler(); break;
+    case STRIFE:                 RunStrifeScheduler();
   }
 }
 
@@ -503,6 +516,37 @@ void TxnProcessor::RunMVCCScheduler() {
             this,
             &TxnProcessor::MVCCExecuteTxn,
             txn));
+    }
+  }
+}
+
+void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
+  // cout<<"batch size: "<<batch->size()<<endl;
+  while (!batch->empty()) {
+    Txn *t = batch->front();
+    batch->pop_front();
+    txn_results_.Push(t);
+  }
+}
+
+void TxnProcessor::RunStrifeScheduler() {
+  cout<<"started strife"<<endl;
+  deque<Txn*> batch;
+  double duration = 0.0001;
+  double startTime = GetTime();
+
+  Txn *txn;
+  while (tp_.Active()) {
+    if (txn_requests_.Pop(&txn)) {
+      // cout<<"in here"<<endl;
+      if (GetTime() - startTime >= duration) {
+        // cout<<"execute batch"<<endl;
+        StrifeExecuteBatch(&batch);
+        batch.clear();
+        startTime = GetTime();
+      } else {
+        batch.push_back(txn);
+      }
     }
   }
 }
