@@ -112,6 +112,10 @@ void StrifeExecuteBatch(deque<Txn*> *);
 
 void StrifePrepare(deque<Txn*> *, atomic_int *);
 
+void StrifeFuse(deque<Txn*> *batch, atomic_int *counter, atomic_int *);
+
+void StrifeAllocate(deque<Txn*> *batch, atomic_int *counter, unordered_map<Cluster*, AtomicQueue<Txn*> > *worklist, AtomicQueue<Txn*> *residuals);
+
 
 // Strife specific variables
 int k;

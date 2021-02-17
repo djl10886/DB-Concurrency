@@ -38,7 +38,7 @@ class Txn {
   // an error occurs.
   void CheckReadWriteSets();
 
- protected:
+//  protected:
   // Copies the internals of this txn into a given transaction (i.e.
   // the readset, writeset, and so forth).  Be sure to modify this method
   // to copy any new data structures you create.

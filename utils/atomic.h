@@ -210,7 +210,7 @@ class AtomicQueue {
     }
   }
 
- private:
+//  private:
   queue<T> queue_;
   Mutex mutex_;
 };

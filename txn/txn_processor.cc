@@ -2,6 +2,8 @@
 #include "txn/txn_processor.h"
 #include <stdio.h>
 #include <set>
+#include <random>
+#include <utility>
 
 #include "txn/lock_manager.h"
 
@@ -570,6 +572,14 @@ Cluster* TxnProcessor::Union(Cluster *r1, Cluster *r2) {
   }
 }
 
+void cartesian_product(set<Cluster*> *s1, set<Cluster*> *s2, set<pair<Cluster*, Cluster*> > *result) {
+  for (auto it = s1->begin(); it != s1->end(); ++it) {
+    for (auto it2 = s2->begin(); it2 != s2->end(); ++it2) {
+      result->insert(make_pair(*it, *it2));
+    }
+  }
+}
+
 void TxnProcessor::StrifePrepare(deque<Txn*> *batch, atomic_int *counter) {
   int size=batch->size();
   for (int i=0; i<size; i++) {
@@ -588,6 +598,66 @@ void TxnProcessor::StrifePrepare(deque<Txn*> *batch, atomic_int *counter) {
   (*counter)++;
 }
 
+void TxnProcessor::StrifeFuse(deque<Txn*> *batch, atomic_int *counter, atomic_int *count) {
+  int size = batch->size();
+
+  for (int i=0; i<size; i++) {
+    Txn *t = batch->at(i);
+    set<Cluster*> C,S;
+    for (auto it=t->writeset_.begin(); it != t->writeset_.end(); ++it) {
+      Cluster *root = Find(storage_->getCluster(*it));
+      if (root->address > M) {
+        S.insert(root);
+      } else {
+        C.insert(root);
+      }
+    }
+    if (S.size() <= 1) {
+      Cluster *c;
+      if (S.size() == 0) {
+        auto first = C.begin();
+        c = *first;
+        C.erase(first);
+      } else {
+        c = *(S.begin());
+      }
+      for (auto other = C.begin(); other != C.end(); ++other)
+        c = Union(c, *other);
+      (c->count)++;
+    } else {
+      set<pair<Cluster*, Cluster*> > SxS;
+      cartesian_product(&S, &S, &SxS);
+      for (auto it=SxS.begin(); it != SxS.end(); ++it) {
+        int c1_id = it->first->id, c2_id = it->second->id;
+        (*((count+c1_id*k) + c2_id))++;  // equivalent to doing count[c1_id][c2_id]++
+      }
+    }
+  }
+
+  (*counter)++;
+}
+
+void TxnProcessor::StrifeAllocate(deque<Txn*> *batch, atomic_int *counter, unordered_map<Cluster*, AtomicQueue<Txn*> > *worklist, AtomicQueue<Txn*> *residuals) {
+  int size = batch->size();
+  for (int i=0; i<size; i++) {
+    Txn *t = batch->at(i);
+    set<Cluster*> C;
+    for (auto it=t->writeset_.begin(); it != t->writeset_.end(); ++it) {
+      C.insert(storage_->getCluster(*it));
+    }
+    for (auto it=t->readset_.begin(); it != t->readset_.end(); ++it) {
+      C.insert(storage_->getCluster(*it));
+    }
+    if (C.size() == 1) {
+      Cluster *c = *(C.begin());
+      (*worklist)[c].Push(t);
+    } else {
+      residuals->Push(t);
+    }
+  }
+  (*counter)++;
+}
+
 void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
 
   //split batch into equal chunks for prepare, fuse, allocate steps
@@ -599,6 +669,7 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
   }
 
   atomic_int counter(0);
+
   //PREPARE
   for (int i=0; i<THREAD_COUNT; i++) {
     tp_.RunTask(new Method<TxnProcessor, void, deque<Txn*>*, atomic_int*>(
@@ -608,16 +679,108 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
   }
 
   while (counter < THREAD_COUNT);
+  
   //SPOT
 
+  random_device dev;
+  mt19937 rng(dev());
+  uniform_int_distribution<mt19937::result_type> gen(0,size-1);
+
+  int i=0, addr_counter = 1;
+  set<Cluster*> special;
+
+  for (int a=0; a<k; a++) {
+    Txn *t = batch->at(gen(rng));
+    set<Cluster*> C,S;
+    for (auto it=t->writeset_.begin(); it != t->writeset_.end(); ++it) {
+      Cluster *root = Find(storage_->getCluster(*it));
+      if (root->address > M) {
+        S.insert(root);
+        break;
+      } else {
+        C.insert(root);
+      }
+    }
+    if (S.size() == 0) {
+      auto first = C.begin();
+      Cluster *c = *first;
+      C.erase(first);
+      for (auto it=C.begin(); it!=C.end(); ++it)
+        c = Union(c, *it);
+      c->id = i++;
+      (c->count)++;
+      c->address = M + (sizeof(Cluster*)*addr_counter++);
+      special.insert(c);
+    }
+  }
+
+  // cout<<"The root of 10 is "<<Find(storage_->getCluster(10))->value<<endl;
+  // cout<<"The root of 20 is "<<Find(storage_->getCluster(20))->value<<endl;
+  // cout<<"The root of 30 is "<<Find(storage_->getCluster(30))->value<<endl;
+  // cout<<"The root of 40 is "<<Find(storage_->getCluster(40))->value<<endl;
+  // cout<<"The root of 50 is "<<Find(storage_->getCluster(50))->value<<endl;
+  // cout<<"The root of 60 is "<<Find(storage_->getCluster(60))->value<<endl;
+  // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
+  // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
+  // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
+  // cout<<"----------------"<<endl;
 
   //FUSE
+  counter = 0;
+  atomic_int count[k][k] = {};
+  for (int i=0; i<THREAD_COUNT; i++) {
+    tp_.RunTask(new Method<TxnProcessor, void, deque<Txn*>*, atomic_int*, atomic_int*>(
+            this,
+            &TxnProcessor::StrifeFuse,
+            &(chunks[i]), &counter, (atomic_int*)count));
+  }
 
+  while (counter < THREAD_COUNT);
+  
+  // cout<<"The root of 10 is "<<Find(storage_->getCluster(10))->value<<endl;
+  // cout<<"The root of 20 is "<<Find(storage_->getCluster(20))->value<<endl;
+  // cout<<"The root of 30 is "<<Find(storage_->getCluster(30))->value<<endl;
+  // cout<<"The root of 40 is "<<Find(storage_->getCluster(40))->value<<endl;
+  // cout<<"The root of 50 is "<<Find(storage_->getCluster(50))->value<<endl;
+  // cout<<"The root of 60 is "<<Find(storage_->getCluster(60))->value<<endl;
+  // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
+  // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
+  // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
 
   //MERGE
-
+  set<pair<Cluster*, Cluster*> > SpecialxSpecial;
+  cartesian_product(&special, &special, &SpecialxSpecial);
+  for (auto it=SpecialxSpecial.begin(); it != SpecialxSpecial.end(); ++it) {
+    Cluster *c1 = it->first, *c2 = it->second;
+    int n1 = count[c1->id][c2->id];
+    int n2 = c1->count + c2->count + n1;
+    if (n1 >= alpha*n2)
+      Union(c1, c2);
+  }
 
   //ALLOCATE
+  counter = 0;
+  unordered_map<Cluster*, AtomicQueue<Txn*> > worklist;
+  // unordered_map<Cluster*, deque<Txn*> > worklist;
+  AtomicQueue<Txn*> residuals;
+
+  for (int i=0; i<THREAD_COUNT; i++) {
+    tp_.RunTask(new Method<TxnProcessor, void, deque<Txn*>*, atomic_int*, unordered_map<Cluster*, AtomicQueue<Txn*> > *, AtomicQueue<Txn*> *>(
+            this,
+            &TxnProcessor::StrifeAllocate,
+            &(chunks[i]), &counter, &worklist, &residuals));
+  }
+
+  while (counter < THREAD_COUNT);
+
+  // int total = 0;
+  // for (auto const& x : worklist) {
+  //   total += x.second.queue_.size();
+  // }
+  // total += residuals.Size();
+  // if (total != size) {
+  //   cout<<"missing "<<(size-total)<<" txns"<<endl;
+  // }
 
 
 

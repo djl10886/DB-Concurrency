@@ -155,26 +155,76 @@ int main(int argc, char** argv) {
 
 
 
-  // TxnProcessor *p = new TxnProcessor(STRIFE);
+  TxnProcessor *p = new TxnProcessor(STRIFE);
 
-  // delete p;
+  Txn *t1 = new RMW(0, 0, 0, 0.0001);
+  t1->writeset_.insert(10);
+  t1->writeset_.insert(20);
+  t1->writeset_.insert(30);
+  t1->writeset_.insert(40);
+
+  Txn *t2 = new RMW(0, 0, 0, 0.0001);
+  t2->writeset_.insert(60);
+  t2->writeset_.insert(70);
+  t2->writeset_.insert(80);
+  t2->writeset_.insert(90);
+
+  Txn *t3 = new RMW(0, 0, 0, 0.0001);
+  t3->writeset_.insert(30);
+  t3->writeset_.insert(40);
+  t3->writeset_.insert(50);
+  t3->writeset_.insert(60);
+
+  p->NewTxnRequest(t1);
+  p->NewTxnRequest(t2);
+  p->NewTxnRequest(t3);
+  t1 = p->GetTxnResult();
+  t2 = p->GetTxnResult();
+  t3 = p->GetTxnResult();
+
+  delete t1;
+  delete t2;
+  delete t3;
+  delete p;
+
+
+  // vector<LoadGen*> lg;
+
+  // cout << "Low contention read-write (5 records)" << endl;
+  // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.0001));
+  // // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.001));
+  // // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.01));
+
+  // Benchmark(lg);
+
+  // for (uint32 i = 0; i < lg.size(); i++)
+  //   delete lg[i];
+
+  // lg.clear();
 
 
 
 
-  vector<LoadGen*> lg;
 
-  cout << "'Low contention' Read only (5 records)" << endl;
-  lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
+
+
+
+
+
+
+  // vector<LoadGen*> lg;
+
+  // cout << "'Low contention' Read only (5 records)" << endl;
+  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
   // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
   // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.01));
 
-  Benchmark(lg);
+  // Benchmark(lg);
 
-  for (uint32 i = 0; i < lg.size(); i++)
-    delete lg[i];
+  // for (uint32 i = 0; i < lg.size(); i++)
+  //   delete lg[i];
 
-  lg.clear();
+  // lg.clear();
 
   // cout << "'Low contention' Read only (30 records) " << endl;
   // lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.0001));
