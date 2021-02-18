@@ -122,7 +122,7 @@ void Benchmark(const vector<LoadGen*>& lg) {
         double end = GetTime();
 
         throughput[round] = txn_count / (end-start);
-
+// cout<<"reached here"<<endl;
         for (auto it = doneTxns.begin(); it != doneTxns.end(); ++it) {
             delete *it;
         }
@@ -157,34 +157,59 @@ int main(int argc, char** argv) {
 
   TxnProcessor *p = new TxnProcessor(STRIFE);
 
-  Txn *t1 = new RMW(0, 0, 0, 0.0001);
-  t1->writeset_.insert(10);
-  t1->writeset_.insert(20);
-  t1->writeset_.insert(30);
-  t1->writeset_.insert(40);
+  for (int i=1; i<=5; i++) {
+    Txn *t = new RMW(0, 0, 0, 0.0001);
+    t->writeset_.insert(i*10);
+    if (i%3==0) {
+      sleep(1);
+    }
+    cout<<"i: "<<i<<endl;
+    cout<<t<<endl;
+    p->NewTxnRequest(t);
+  }
+  cout<<"----------"<<endl;
+  for (int i=0; i<5; i++) {
+    cout<<"i: "<<i<<endl;
+    Txn *t = p->GetTxnResult();
+    cout<<t<<endl;
+    delete t;
+  }
 
-  Txn *t2 = new RMW(0, 0, 0, 0.0001);
-  t2->writeset_.insert(60);
-  t2->writeset_.insert(70);
-  t2->writeset_.insert(80);
-  t2->writeset_.insert(90);
+  // Txn *t1 = new RMW(0, 0, 0, 0.0001);
+  // t1->writeset_.insert(10);
+  // Txn *t2 = new RMW(0, 0, 0, 0.0001);
+  // t1->writeset_.insert(20);
+  // Txn *t3 = new RMW(0, 0, 0, 0.0001);
+  // t1->writeset_.insert(30);
+  // Txn *t4 = new RMW(0, 0, 0, 0.0001);
+  // t1->writeset_.insert(40);
 
-  Txn *t3 = new RMW(0, 0, 0, 0.0001);
-  t3->writeset_.insert(30);
-  t3->writeset_.insert(40);
-  t3->writeset_.insert(50);
-  t3->writeset_.insert(60);
+  // Txn *t5 = new RMW(0, 0, 0, 0.0001);
+  // t2->writeset_.insert(60);
+  // Txn *t6 = new RMW(0, 0, 0, 0.0001);
+  // t2->writeset_.insert(70);
+  // Txn *t7 = new RMW(0, 0, 0, 0.0001);
+  // t2->writeset_.insert(80);
+  // Txn *t8 = new RMW(0, 0, 0, 0.0001);
+  // t2->writeset_.insert(90);
+ 
+  // Txn *t3 = new RMW(0, 0, 0, 0.0001);
+  // t3->writeset_.insert(30);
+  // t3->writeset_.insert(40);
+  // t3->writeset_.insert(50);
+  // t3->writeset_.insert(60);
 
-  p->NewTxnRequest(t1);
-  p->NewTxnRequest(t2);
-  p->NewTxnRequest(t3);
-  t1 = p->GetTxnResult();
-  t2 = p->GetTxnResult();
-  t3 = p->GetTxnResult();
+  // p->NewTxnRequest(t1);
+  // p->NewTxnRequest(t2);
+  // sleep(1);
+  // p->NewTxnRequest(t3);
+  // t1 = p->GetTxnResult();
+  // t2 = p->GetTxnResult();
+  // t3 = p->GetTxnResult();
 
-  delete t1;
-  delete t2;
-  delete t3;
+  // delete t1;
+  // delete t2;
+  // delete t3;
   delete p;
 
 

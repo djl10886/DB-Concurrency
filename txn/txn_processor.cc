@@ -16,7 +16,7 @@ TxnProcessor::TxnProcessor(CCMode mode)
     : mode_(mode), tp_(THREAD_COUNT), next_unique_id_(1) {
   if (mode_ == LOCKING_EXCLUSIVE_ONLY)
     lm_ = new LockManagerA(&ready_txns_);
-  else if (mode_ == LOCKING)
+  else if (mode_ == LOCKING || mode_ == STRIFE)
     lm_ = new LockManagerB(&ready_txns_);
   
   // Create the storage
@@ -56,7 +56,7 @@ void* TxnProcessor::StartScheduler(void * arg) {
 }
 
 TxnProcessor::~TxnProcessor() {
-  if (mode_ == LOCKING_EXCLUSIVE_ONLY || mode_ == LOCKING)
+  if (mode_ == LOCKING_EXCLUSIVE_ONLY || mode_ == LOCKING || mode_ == STRIFE)
     delete lm_;
     
   delete storage_;
@@ -643,19 +643,56 @@ void TxnProcessor::StrifeAllocate(deque<Txn*> *batch, atomic_int *counter, unord
     Txn *t = batch->at(i);
     set<Cluster*> C;
     for (auto it=t->writeset_.begin(); it != t->writeset_.end(); ++it) {
-      C.insert(storage_->getCluster(*it));
+      C.insert(Find(storage_->getCluster(*it)));
     }
     for (auto it=t->readset_.begin(); it != t->readset_.end(); ++it) {
-      C.insert(storage_->getCluster(*it));
+      C.insert(Find(storage_->getCluster(*it)));
     }
     if (C.size() == 1) {
       Cluster *c = *(C.begin());
-      (*worklist)[c].Push(t);
+      if (!worklist->count(c)) {
+        mutex_.Lock();
+        (*worklist)[c].Push(t);
+        mutex_.Unlock();
+      } else 
+        (*worklist)[c].Push(t);
     } else {
       residuals->Push(t);
     }
   }
   (*counter)++;
+}
+
+void TxnProcessor::StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter) {
+  // cout<<"started conflict free"<<endl;
+  while (!cluster->empty()) {
+    Txn *txn = cluster->front();
+    cluster->pop();
+    // ExecuteTxn(txn);
+    // // Commit/abort txn according to program logic's commit/abort decision.
+    // if (txn->Status() == COMPLETED_C) {
+    //   ApplyWrites(txn);
+    //   txn->status_ = COMMITTED;
+    // } else if (txn->Status() == COMPLETED_A) {
+    //   txn->status_ = ABORTED;
+    // } else {
+    //   // Invalid TxnStatus!
+    //   DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+    // }
+    txn_results_.Push(txn);
+  }
+  (*counter)++;
+}
+
+void TxnProcessor::StrifeConflictFree2(AtomicQueue<queue<Txn*>*> *worklist) {
+  queue<Txn*> *cluster;
+  while (worklist->Pop(&cluster)) {
+    while (!cluster->empty()) {
+      Txn *txn = cluster->front();
+      cluster->pop();
+      txn_results_.Push(txn);
+    }
+  }
 }
 
 void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
@@ -714,17 +751,6 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
     }
   }
 
-  // cout<<"The root of 10 is "<<Find(storage_->getCluster(10))->value<<endl;
-  // cout<<"The root of 20 is "<<Find(storage_->getCluster(20))->value<<endl;
-  // cout<<"The root of 30 is "<<Find(storage_->getCluster(30))->value<<endl;
-  // cout<<"The root of 40 is "<<Find(storage_->getCluster(40))->value<<endl;
-  // cout<<"The root of 50 is "<<Find(storage_->getCluster(50))->value<<endl;
-  // cout<<"The root of 60 is "<<Find(storage_->getCluster(60))->value<<endl;
-  // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
-  // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
-  // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
-  // cout<<"----------------"<<endl;
-
   //FUSE
   counter = 0;
   atomic_int count[k][k] = {};
@@ -736,16 +762,6 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
   }
 
   while (counter < THREAD_COUNT);
-  
-  // cout<<"The root of 10 is "<<Find(storage_->getCluster(10))->value<<endl;
-  // cout<<"The root of 20 is "<<Find(storage_->getCluster(20))->value<<endl;
-  // cout<<"The root of 30 is "<<Find(storage_->getCluster(30))->value<<endl;
-  // cout<<"The root of 40 is "<<Find(storage_->getCluster(40))->value<<endl;
-  // cout<<"The root of 50 is "<<Find(storage_->getCluster(50))->value<<endl;
-  // cout<<"The root of 60 is "<<Find(storage_->getCluster(60))->value<<endl;
-  // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
-  // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
-  // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
 
   //MERGE
   set<pair<Cluster*, Cluster*> > SpecialxSpecial;
@@ -757,6 +773,16 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
     if (n1 >= alpha*n2)
       Union(c1, c2);
   }
+
+  // cout<<"The root of 10 is "<<Find(storage_->getCluster(10))->value<<endl;
+  // cout<<"The root of 20 is "<<Find(storage_->getCluster(20))->value<<endl;
+  // cout<<"The root of 30 is "<<Find(storage_->getCluster(30))->value<<endl;
+  // cout<<"The root of 40 is "<<Find(storage_->getCluster(40))->value<<endl;
+  // cout<<"The root of 50 is "<<Find(storage_->getCluster(50))->value<<endl;
+  // cout<<"The root of 60 is "<<Find(storage_->getCluster(60))->value<<endl;
+  // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
+  // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
+  // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
 
   //ALLOCATE
   counter = 0;
@@ -773,22 +799,65 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
 
   while (counter < THREAD_COUNT);
 
-  // int total = 0;
+  
+  // int cluster_total = 0;
   // for (auto const& x : worklist) {
-  //   total += x.second.queue_.size();
+  //   cluster_total += x.second.queue_.size();
   // }
-  // total += residuals.Size();
-  // if (total != size) {
-  //   cout<<"missing "<<(size-total)<<" txns"<<endl;
+  // cout<<"batch size: "<<size<<", cluster total: "<<cluster_total<<", residuals: "<<residuals.Size()<<endl;
+
+  //CONFLICT FREE
+  // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+  //   queue<Txn*> *q = &(it->second.queue_);
+  //   while (!q->empty()) {
+  //     Txn *txn = q->front();
+  //     q->pop();
+  //     txn_results_.Push(txn);
+  //   }
   // }
 
 
+  // AtomicQueue<queue<Txn*>*> worklist_q;
+  // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+  //   worklist_q.queue_.push(&(it->second.queue_));
+  // }
 
-  while (!batch->empty()) {
-    Txn *t = batch->front();
-    batch->pop_front();
-    txn_results_.Push(t);
+  // for (int i=0; i<THREAD_COUNT; i++) {
+  //   tp_.RunTask(new Method<TxnProcessor, void, AtomicQueue<queue<Txn*>*> *>(
+  //       this,
+  //       &TxnProcessor::StrifeConflictFree2,
+  //       &(worklist_q)));
+  // }
+
+  // while (worklist_q)
+
+  for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+    tp_.RunTask(new Method<TxnProcessor, void, queue<Txn*>*, atomic_int*>(
+          this,
+          &TxnProcessor::StrifeConflictFree,
+          &(it->second.queue_), &counter));
   }
+  int worklist_size = worklist.size();
+  while (counter < worklist_size);
+  // printf("worklist size: %d---------------\n", worklist_size);
+  // fflush(stdout);
+  // // cout<<"worklist size: "<<worklist_size<<"------------"<<endl;
+
+
+
+  //RESIDUALS
+  queue<Txn*> *Residuals = &(residuals.queue_);
+  while (!Residuals->empty()) {
+    Txn *txn = Residuals->front();
+    Residuals->pop();
+    txn_results_.Push(txn);
+  }
+
+  // while (!batch->empty()) {
+  //   Txn *t = batch->front();
+  //   batch->pop_front();
+  //   txn_results_.Push(t);
+  // }
 
 }
 
@@ -805,7 +874,9 @@ void TxnProcessor::RunStrifeScheduler() {
     }
     if (batch.size()>0 && GetTime() - startTime >= duration) {
       StrifeExecuteBatch(&batch);
+      batch.clear();
       startTime = GetTime();
+      // cout<<"finished batch"<<endl;
     }
   }
   

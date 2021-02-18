@@ -116,6 +116,9 @@ void StrifeFuse(deque<Txn*> *batch, atomic_int *counter, atomic_int *);
 
 void StrifeAllocate(deque<Txn*> *batch, atomic_int *counter, unordered_map<Cluster*, AtomicQueue<Txn*> > *worklist, AtomicQueue<Txn*> *residuals);
 
+void StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter);
+
+void StrifeConflictFree2(AtomicQueue<queue<Txn*>*> *worklist);
 
 // Strife specific variables
 int k;
