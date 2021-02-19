@@ -24,8 +24,8 @@ TxnProcessor::TxnProcessor(CCMode mode)
     storage_ = new MVCCStorage();
   } else if (mode_ == STRIFE) {
     storage_ = new StrifeStorage();
-    k = 23;
-    alpha = 0.2;
+    k = 25;
+    alpha = 0.25;
   } else {
     storage_ = new Storage();
   }
@@ -588,11 +588,13 @@ void TxnProcessor::StrifePrepare(deque<Txn*> *batch, atomic_int *counter) {
       Cluster *c = storage_->getCluster(*it);
       c->parent = c;
       c->count = 0;
+      c->address = reinterpret_cast<uintptr_t>(c);
     }
     for (auto it = t->readset_.begin(); it != t->readset_.end(); ++it) {
       Cluster *c = storage_->getCluster(*it);
       c->parent = c;
       c->count = 0;
+      c->address = reinterpret_cast<uintptr_t>(c);
     }
   }
   (*counter)++;
@@ -615,15 +617,18 @@ void TxnProcessor::StrifeFuse(deque<Txn*> *batch, atomic_int *counter, atomic_in
     if (S.size() <= 1) {
       Cluster *c;
       if (S.size() == 0) {
-        auto first = C.begin();
-        c = *first;
-        C.erase(first);
+        if (C.size()>0) {
+          auto first = C.begin();
+          c = *first;
+          C.erase(first);
+        }
       } else {
         c = *(S.begin());
       }
       for (auto other = C.begin(); other != C.end(); ++other)
         c = Union(c, *other);
-      (c->count)++;
+      if (c)
+        (c->count)++;
     } else {
       set<pair<Cluster*, Cluster*> > SxS;
       cartesian_product(&S, &S, &SxS);
@@ -663,13 +668,36 @@ void TxnProcessor::StrifeAllocate(deque<Txn*> *batch, atomic_int *counter, unord
   (*counter)++;
 }
 
+// this one seems to mess up the contents of the parameter cluster when it is passed in
 void TxnProcessor::StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter) {
   // cout<<"started conflict free"<<endl;
   while (!cluster->empty()) {
     Txn *txn = cluster->front();
     cluster->pop();
+    printf("%p\n", txn);
+    fflush(stdout);
     // ExecuteTxn(txn);
     // // Commit/abort txn according to program logic's commit/abort decision.
+    // if (txn->Status() == COMPLETED_C) {
+    //   ApplyWrites(txn);
+    //   txn->status_ = COMMITTED;
+    // } else if (txn->Status() == COMPLETED_A) {
+    //   txn->status_ = ABORTED;
+    // } else {
+    //   // Invalid TxnStatus!
+    //   DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+    // }
+    txn_results_.Push(txn);
+  }
+  // cout<<"#######"<<endl;
+  (*counter)++;
+}
+
+void TxnProcessor::StrifeConflictFree2(AtomicQueue<Txn*> *cluster, atomic_int *counter) {
+  Txn *txn;
+  while (cluster->Pop(&txn)) {
+    // ExecuteTxn(txn);
+    // Commit/abort txn according to program logic's commit/abort decision.
     // if (txn->Status() == COMPLETED_C) {
     //   ApplyWrites(txn);
     //   txn->status_ = COMMITTED;
@@ -684,18 +712,134 @@ void TxnProcessor::StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter)
   (*counter)++;
 }
 
-void TxnProcessor::StrifeConflictFree2(AtomicQueue<queue<Txn*>*> *worklist) {
-  queue<Txn*> *cluster;
-  while (worklist->Pop(&cluster)) {
-    while (!cluster->empty()) {
-      Txn *txn = cluster->front();
-      cluster->pop();
+void TxnProcessor::StrifeConflictFree3(AtomicQueue<queue<Txn*> > *worklist, atomic_int *counter) {
+  queue<Txn*> q;
+  while (worklist->Pop(&q)) {
+    Txn *txn;
+    while (!q.empty()) {
+      txn = q.front();
+      q.pop();
+      ExecuteTxn(txn);
       txn_results_.Push(txn);
+    }
+    (*counter)++;
+  }
+}
+
+void TxnProcessor::StrifeResidual(AtomicQueue<Txn*> *residuals) {
+  Txn* txn;
+  int txns_remaining = residuals->Size();
+  while (txns_remaining>0) {
+    // cout<<"txns_remaining: "<<txns_remaining<<endl;
+    if (residuals->Pop(&txn)) {
+    // Start processing the next incoming transaction request.
+      bool blocked = false;
+      // Request read locks.
+      for (set<Key>::iterator it = txn->readset_.begin();
+            it != txn->readset_.end(); ++it) {
+        if (!lm_->ReadLock(txn, *it)) {
+          blocked = true;
+          // If readset_.size() + writeset_.size() > 1, and blocked, just abort
+          if (txn->readset_.size() + txn->writeset_.size() > 1) {
+            // Release all locks that already acquired
+            for (set<Key>::iterator it_reads = txn->readset_.begin(); true; ++it_reads) {
+              lm_->Release(txn, *it_reads);
+              if (it_reads == it) {
+                break;
+              }
+            }
+            break;
+          }
+        }
+      }
+          
+      if (blocked == false) {
+        // Request write locks.
+        for (set<Key>::iterator it = txn->writeset_.begin();
+              it != txn->writeset_.end(); ++it) {
+          if (!lm_->WriteLock(txn, *it)) {
+            blocked = true;
+            // If readset_.size() + writeset_.size() > 1, and blocked, just abort
+            if (txn->readset_.size() + txn->writeset_.size() > 1) {
+              // Release all read locks that already acquired
+              for (set<Key>::iterator it_reads = txn->readset_.begin(); it_reads != txn->readset_.end(); ++it_reads) {
+                lm_->Release(txn, *it_reads);
+              }
+              // Release all write locks that already acquired
+              for (set<Key>::iterator it_writes = txn->writeset_.begin(); true; ++it_writes) {
+                lm_->Release(txn, *it_writes);
+                if (it_writes == it) {
+                  break;
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      // If all read and write locks were immediately acquired, this txn is
+      // ready to be executed. Else, just restart the txn
+      if (blocked == false) {
+        ready_txns_.push_back(txn);
+      } else if (blocked == true && (txn->writeset_.size() + txn->readset_.size() > 1)){
+        // mutex_.Lock();
+        // txn->unique_id_ = next_unique_id_;
+        // next_unique_id_++;
+        // txn_requests_.Push(txn);
+        // mutex_.Unlock();
+        residuals->Push(txn);
+      }
+    }
+
+
+    // Process and commit all transactions that have finished running.
+    while (completed_txns_.Pop(&txn)) {
+      // Commit/abort txn according to program logic's commit/abort decision.
+      if (txn->Status() == COMPLETED_C) {
+        ApplyWrites(txn);
+        txn->status_ = COMMITTED;
+      } else if (txn->Status() == COMPLETED_A) {
+        txn->status_ = ABORTED;
+      } else {
+        // Invalid TxnStatus!
+        DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+      }
+      
+      // Release read locks.
+      for (set<Key>::iterator it = txn->readset_.begin();
+           it != txn->readset_.end(); ++it) {
+        lm_->Release(txn, *it);
+      }
+      // Release write locks.
+      for (set<Key>::iterator it = txn->writeset_.begin();
+           it != txn->writeset_.end(); ++it) {
+        lm_->Release(txn, *it);
+      }
+
+      // Return result to client.
+      txn_results_.Push(txn);
+      txns_remaining--;
+    }
+
+    // Start executing all transactions that have newly acquired all their
+    // locks.
+    while (ready_txns_.size()) {
+      // Get next ready txn from the queue.
+      txn = ready_txns_.front();
+      ready_txns_.pop_front();
+
+      // Start txn running in its own thread.
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
+            this,
+            &TxnProcessor::ExecuteTxn,
+            txn));
     }
   }
 }
 
 void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
+  // cout<<"started batch"<<endl;
 
   //split batch into equal chunks for prepare, fuse, allocate steps
   deque<Txn*> chunks[THREAD_COUNT];
@@ -705,7 +849,7 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
     chunks[i%THREAD_COUNT].push_back(t);
   }
 
-  atomic_int counter(0);
+  atomic_int counter(0); // used to keep track of how many subtasks in the parallel steps have finished
 
   //PREPARE
   for (int i=0; i<THREAD_COUNT; i++) {
@@ -716,7 +860,7 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
   }
 
   while (counter < THREAD_COUNT);
-  
+
   //SPOT
 
   random_device dev;
@@ -738,15 +882,17 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
         C.insert(root);
       }
     }
-    if (S.size() == 0) {
+
+    if (S.size() == 0 and C.size()>0) {
       auto first = C.begin();
+      
       Cluster *c = *first;
       C.erase(first);
       for (auto it=C.begin(); it!=C.end(); ++it)
         c = Union(c, *it);
       c->id = i++;
       (c->count)++;
-      c->address = M + (sizeof(Cluster*)*addr_counter++);
+      c->address = M + (sizeof(Cluster*)*(addr_counter++));
       special.insert(c);
     }
   }
@@ -799,12 +945,15 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
 
   while (counter < THREAD_COUNT);
 
-  
-  // int cluster_total = 0;
-  // for (auto const& x : worklist) {
-  //   cluster_total += x.second.queue_.size();
-  // }
-  // cout<<"batch size: "<<size<<", cluster total: "<<cluster_total<<", residuals: "<<residuals.Size()<<endl;
+  int cluster_total=0;
+  for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+    cluster_total += it->second.Size();
+    // cout<<it->second.Size()<<endl;
+  }
+  // cout<<"residuals: "<<residuals.Size()<<endl;
+  // cout<<"------------"<<endl;
+  // if (cluster_total + residuals.Size() != size)
+    // cout<<"batch size: "<<size<<", cluster total: "<<cluster_total<<", residuals: "<<residuals.Size()<<endl;
 
   //CONFLICT FREE
   // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
@@ -812,46 +961,62 @@ void TxnProcessor::StrifeExecuteBatch(deque<Txn*> *batch) {
   //   while (!q->empty()) {
   //     Txn *txn = q->front();
   //     q->pop();
+  //     cout<<txn<<endl;
   //     txn_results_.Push(txn);
   //   }
   // }
 
 
-  // AtomicQueue<queue<Txn*>*> worklist_q;
-  // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
-  //   worklist_q.queue_.push(&(it->second.queue_));
-  // }
+  
+  counter = 0;
+  int worklist_size = worklist.size();
 
-  // for (int i=0; i<THREAD_COUNT; i++) {
-  //   tp_.RunTask(new Method<TxnProcessor, void, AtomicQueue<queue<Txn*>*> *>(
+  AtomicQueue<queue<Txn*> > worklist_q;
+  for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+    worklist_q.queue_.push(it->second.queue_);
+  }
+
+  for (int i=0; i<THREAD_COUNT; i++) {
+    tp_.RunTask(new Method<TxnProcessor, void, AtomicQueue<queue<Txn*> > *, atomic_int*>(
+      this,
+      &TxnProcessor::StrifeConflictFree3,
+      &(worklist_q), &counter));
+  }
+
+  // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+  //   tp_.RunTask(new Method<TxnProcessor, void, AtomicQueue<Txn*>*, atomic_int*>(
   //       this,
   //       &TxnProcessor::StrifeConflictFree2,
-  //       &(worklist_q)));
+  //       &(it->second), &counter));
   // }
-
-  // while (worklist_q)
-
-  for (auto it=worklist.begin(); it != worklist.end(); ++it) {
-    tp_.RunTask(new Method<TxnProcessor, void, queue<Txn*>*, atomic_int*>(
-          this,
-          &TxnProcessor::StrifeConflictFree,
-          &(it->second.queue_), &counter));
-  }
-  int worklist_size = worklist.size();
+  
   while (counter < worklist_size);
+
+  // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
+  //   tp_.RunTask(new Method<TxnProcessor, void, queue<Txn*>*, atomic_int*>(
+  //         this,
+  //         &TxnProcessor::StrifeConflictFree,
+  //         &(it->second.queue_), &counter));
+  // }
+  // int worklist_size = worklist.size();
+  // while (counter < worklist_size);
+
+
   // printf("worklist size: %d---------------\n", worklist_size);
   // fflush(stdout);
   // // cout<<"worklist size: "<<worklist_size<<"------------"<<endl;
 
 
-
   //RESIDUALS
-  queue<Txn*> *Residuals = &(residuals.queue_);
-  while (!Residuals->empty()) {
-    Txn *txn = Residuals->front();
-    Residuals->pop();
-    txn_results_.Push(txn);
-  }
+  StrifeResidual(&(residuals));
+
+  // queue<Txn*> *Residuals = &(residuals.queue_);
+  // while (!Residuals->empty()) {
+  //   Txn *txn = Residuals->front();
+  //   Residuals->pop();
+  //   ExecuteTxn(txn);
+  //   txn_results_.Push(txn);
+  // }
 
   // while (!batch->empty()) {
   //   Txn *t = batch->front();
