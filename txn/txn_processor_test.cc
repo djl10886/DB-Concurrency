@@ -116,9 +116,8 @@ void Benchmark(const vector<LoadGen*>& lg) {
           Txn* txn = p->GetTxnResult();
           doneTxns.push_back(txn);
           txn_count++;
-          // cout<<"i: "<<i<<endl;
         }
-
+// cout<<"txn count:"<<txn_count<<endl;
         // Record end time.
         double end = GetTime();
 
@@ -160,12 +159,10 @@ int main(int argc, char** argv) {
   // TxnProcessor *p = new TxnProcessor(STRIFE);
 
   // for (int i=1; i<=50; i++) {
-  //   Txn *t = new RMW(100, 0, 10, 0.0001);
+  //   Txn *t = new RMW(100, 0, 1, 0.0001);
   //   if (i%10==0) {
-  //     sleep(0.5);
+  //     sleep(0.25);
   //   }
-  //   // cout<<"i: "<<i<<endl;
-  //   // cout<<t<<endl;
   //   p->NewTxnRequest(t);
   // }
   // // cout<<"----------"<<endl;

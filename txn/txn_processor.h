@@ -108,13 +108,14 @@ void RunStrifeScheduler();
 
 Cluster* Union(Cluster *r1, Cluster *r2);
 
-void StrifeExecuteBatch(deque<Txn*> *);
+void StrifeExecuteBatch(vector<Txn*> *);
+void StrifeExecuteBatch2(vector<Txn*> *);
 
-void StrifePrepare(deque<Txn*> *, atomic_int *);
+void StrifePrepare(vector<Txn*> *, atomic_int *);
 
-void StrifeFuse(deque<Txn*> *batch, atomic_int *counter, atomic_int *);
+void StrifeFuse(vector<Txn*> *batch, atomic_int *counter, atomic_int *);
 
-void StrifeAllocate(deque<Txn*> *batch, atomic_int *counter, unordered_map<Cluster*, AtomicQueue<Txn*> > *worklist, AtomicQueue<Txn*> *residuals);
+void StrifeAllocate(vector<Txn*> *batch, atomic_int *counter, unordered_map<Cluster*, AtomicQueue<Txn*> > *worklist, AtomicQueue<Txn*> *residuals);
 
 void StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter);
 
@@ -124,10 +125,14 @@ void StrifeConflictFree3(AtomicQueue<AtomicQueue<Txn*> *> *worklist, atomic_int 
 
 void StrifeResidual(AtomicQueue<Txn*> *residuals);
 
+static void* StartStrife(void*);
+void HandleBatches();
+
 // Strife specific variables
 int k;
 double alpha;
 uintptr_t M;
+AtomicQueue<vector<Txn*>* > batch_list;
 
 // Concurrency control mechanism the TxnProcessor is currently using.
 CCMode mode_;
