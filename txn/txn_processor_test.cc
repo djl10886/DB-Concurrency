@@ -116,16 +116,16 @@ void Benchmark(const vector<LoadGen*>& lg) {
           Txn* txn = p->GetTxnResult();
           doneTxns.push_back(txn);
           txn_count++;
-          cout<<"i: "<<i<<endl;
+          // cout<<"i: "<<i<<endl;
         }
 
         // Record end time.
         double end = GetTime();
 
         throughput[round] = txn_count / (end-start);
-cout<<doneTxns.size()<<"-----------"<<endl;
+// cout<<doneTxns.size()<<"-----------"<<endl;
         for (auto it = doneTxns.begin(); it != doneTxns.end(); ++it) {
-          cout<<*it<<endl;
+          // cout<<*it<<endl;
             delete *it;
         }
 
@@ -159,18 +159,17 @@ int main(int argc, char** argv) {
 
   // TxnProcessor *p = new TxnProcessor(STRIFE);
 
-  // for (int i=1; i<=5; i++) {
-  //   Txn *t = new RMW(0, 0, 0, 0.0001);
-  //   t->readset_.insert(i*10);
-  //   if (i%3==0) {
-  //     sleep(1);
+  // for (int i=1; i<=50; i++) {
+  //   Txn *t = new RMW(100, 0, 10, 0.0001);
+  //   if (i%10==0) {
+  //     sleep(0.5);
   //   }
   //   // cout<<"i: "<<i<<endl;
   //   // cout<<t<<endl;
   //   p->NewTxnRequest(t);
   // }
   // // cout<<"----------"<<endl;
-  // for (int i=0; i<5; i++) {
+  // for (int i=0; i<50; i++) {
   //   // cout<<"i: "<<i<<endl;
   //   Txn *t = p->GetTxnResult();
   //   // cout<<t<<endl;
@@ -218,8 +217,8 @@ int main(int argc, char** argv) {
 
   vector<LoadGen*> lg;
 
-  cout << "Low contention read-write (5 records)" << endl;
-  lg.push_back(new RMWLoadGen(100, 0, 5, 0.0001));
+  cout << "Low contention read-only (5 records)" << endl;
+  lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
   // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.001));
   // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.01));
 
