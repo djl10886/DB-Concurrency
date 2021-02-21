@@ -10,7 +10,12 @@
 using namespace std;
 
 // Thread & queue counts for StaticThreadPool initialization.
-#define THREAD_COUNT 6
+#define THREAD_COUNT 7
+
+typedef struct handler {
+  TxnProcessor *p;
+  vector<Txn*> *batch;
+} StrifeHandler;
 
 TxnProcessor::TxnProcessor(CCMode mode)
     : mode_(mode), tp_(THREAD_COUNT), next_unique_id_(1) {
@@ -24,8 +29,8 @@ TxnProcessor::TxnProcessor(CCMode mode)
     storage_ = new MVCCStorage();
   } else if (mode_ == STRIFE) {
     storage_ = new StrifeStorage();
-    k = 25;
-    alpha = 0.25;
+    k = 23;
+    alpha = 0.8;
   } else {
     storage_ = new Storage();
   }
@@ -673,28 +678,25 @@ void TxnProcessor::StrifeAllocate(vector<Txn*> *batch, atomic_int *counter, unor
   (*counter)++;
 }
 
-// this one seems to mess up the contents of the parameter cluster when it is passed in
 void TxnProcessor::StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter) {
   // cout<<"started conflict free"<<endl;
   while (!cluster->empty()) {
     Txn *txn = cluster->front();
     cluster->pop();
-    printf("%p\n", txn);
-    fflush(stdout);
-    // ExecuteTxn(txn);
-    // // Commit/abort txn according to program logic's commit/abort decision.
-    // if (txn->Status() == COMPLETED_C) {
-    //   ApplyWrites(txn);
-    //   txn->status_ = COMMITTED;
-    // } else if (txn->Status() == COMPLETED_A) {
-    //   txn->status_ = ABORTED;
-    // } else {
-    //   // Invalid TxnStatus!
-    //   DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
-    // }
+    ExecuteTxn(txn);
+    // Commit/abort txn according to program logic's commit/abort decision.
+    if (txn->Status() == COMPLETED_C) {
+      ApplyWrites(txn);
+      txn->status_ = COMMITTED;
+    } else if (txn->Status() == COMPLETED_A) {
+      txn->status_ = ABORTED;
+    } else {
+      // Invalid TxnStatus!
+      DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
+    }
+    completed_txns_.Pop(&txn);
     txn_results_.Push(txn);
   }
-  // cout<<"#######"<<endl;
   (*counter)++;
 }
 
@@ -733,13 +735,15 @@ void TxnProcessor::StrifeConflictFree3(AtomicQueue<AtomicQueue<Txn*> *> *worklis
   }
 }
 
-void TxnProcessor::StrifeResidual(AtomicQueue<Txn*> *residuals) {
+void TxnProcessor::StrifeResidual(queue<Txn*> *residuals) {
   Txn* txn;
-  int txns_remaining = residuals->Size();
+  int txns_remaining = residuals->size();
   while (txns_remaining>0) {
 
-    if (residuals->Pop(&txn)) {
-    // Start processing the next incoming transaction request.
+    if (!residuals->empty()) {
+      txn = residuals->front();
+      residuals->pop();
+    // Start processing the next transaction request.
       bool blocked = false;
       // Request read locks.
       for (set<Key>::iterator it = txn->readset_.begin();
@@ -795,7 +799,7 @@ void TxnProcessor::StrifeResidual(AtomicQueue<Txn*> *residuals) {
         next_unique_id_++;
         // txn_requests_.Push(txn);
         // mutex_.Unlock();
-        residuals->Push(txn);
+        residuals->push(txn);
       }
     }
 
@@ -850,6 +854,8 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   //split batch into equal chunks for prepare, fuse, allocate steps
   vector<Txn*> chunks[THREAD_COUNT];
   int size = batch->size();
+  // cout<<"batch size: "<<size<<endl;
+
   // int limit = size/THREAD_COUNT + 1;
   // for (int i=0; i<THREAD_COUNT; i++)
   //   chunks[i].reserve(limit);
@@ -859,7 +865,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
     chunks[i%THREAD_COUNT].push_back(t);
   }
 
-
+  double t1 = GetTime();
   atomic_int counter(0); // used to keep track of how many subtasks in the parallel steps have finished
 
   //PREPARE
@@ -873,7 +879,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   while (counter < THREAD_COUNT);
 
   //SPOT
-
+double t2 = GetTime();
   random_device dev;
   mt19937 rng(dev());
   uniform_int_distribution<mt19937::result_type> gen(0,size-1);
@@ -908,7 +914,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
       special.insert(c);
     }
   }
-
+double t3 = GetTime();
   //FUSE
   counter = 0;
   atomic_int count[k][k] = {};
@@ -920,7 +926,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   }
 
   while (counter < THREAD_COUNT);
-
+double t4 = GetTime();
   //MERGE
   set<pair<Cluster*, Cluster*> > SpecialxSpecial;
   cartesian_product(&special, &special, &SpecialxSpecial);
@@ -941,7 +947,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
   // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
   // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
-
+double t5 = GetTime();
   //ALLOCATE
   counter = 0;
   unordered_map<Cluster*, AtomicQueue<Txn*> > worklist;
@@ -957,7 +963,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
 
   while (counter < THREAD_COUNT);
 
-
+  double t6 = GetTime();
   //CONFLICT FREE
 
   
@@ -965,14 +971,14 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   int worklist_size = worklist.size();
 
   for (auto it=worklist.begin(); it != worklist.end(); ++it) {
-    tp_.RunTask(new Method<TxnProcessor, void, AtomicQueue<Txn*>*, atomic_int*>(
+    tp_.RunTask(new Method<TxnProcessor, void, queue<Txn*>*, atomic_int*>(
         this,
-        &TxnProcessor::StrifeConflictFree2,
-        &(it->second), &counter));
+        &TxnProcessor::StrifeConflictFree,
+        &(it->second.queue_), &counter));
   }
   
   while (counter < worklist_size);
-
+double t7 = GetTime();
 
   // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
   //   tp_.RunTask(new Method<TxnProcessor, void, queue<Txn*>*, atomic_int*>(
@@ -983,10 +989,32 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   // int worklist_size = worklist.size();
   // while (counter < worklist_size);
 
-
+  
   //RESIDUALS
   
-  StrifeResidual(&(residuals));
+  StrifeResidual(&(residuals.queue_));
+  double t8 = GetTime();
+  prev_batch_finished = true;
+
+  // double prepare = t2-t1;
+  // double spot = t3-t2;
+  // double fuse = t4-t3;
+  // double merge = t5-t4;
+  // double allocate = t6-t5;
+  // double conflict = t7-t6;
+  // double residual = t8-t7;
+  // double total = t8-t1;
+
+  // t1++, t2++, t3++, t4++, t5++, t6++;
+
+  // cout<<"prepare: "<<prepare/total<<endl<<flush;
+  // cout<<"spot: "<<spot/total<<endl<<flush;
+  // cout<<"fuse: "<<fuse/total<<endl<<flush;
+  // cout<<"merge: "<<merge/total<<endl<<flush;
+  // cout<<"allocate: "<<allocate/total<<endl<<flush;
+  // cout<<"conflict free: "<<conflict/total<<endl<<flush;
+  // cout<<"residuals: "<<residual/total<<endl<<flush;
+  // cout<<"-----------------"<<endl<<flush;
 
 }
 
@@ -1108,8 +1136,6 @@ void TxnProcessor::HandleBatches() {
   vector<Txn*> *batch;
   while(tp_.Active()) {
     if (batch_list.Pop(&batch)) {
-      // printf("new batch\n");
-      // fflush(stdout);
       StrifeExecuteBatch(batch);
       delete batch;
     }
@@ -1121,11 +1147,41 @@ void* TxnProcessor::StartStrife(void * arg) {
   return NULL;
 }
 
+void* TxnProcessor::StartBatch(void *arg) {
+  StrifeHandler *h = reinterpret_cast<StrifeHandler*>(arg);
+  TxnProcessor *p = h->p;
+  vector<Txn*> *batch = h->batch;
+  p->StrifeExecuteBatch(batch);
+  return NULL;
+}
+
 void TxnProcessor::RunStrifeScheduler() {
 
   // vector<Txn*> *batch = new vector<Txn*>();
-  // double duration=0.001, startTime = GetTime();
+  // double duration = 0.01, startTime = GetTime();
+  // Txn *txn;
+  // while (tp_.Active()) {
+  //   if (txn_requests_.Pop(&txn))
+  //     batch->push_back(txn);
+  //   if (batch->size() > 0 and GetTime()-startTime >= duration) {
+  //     batch_list.Push(batch);
+  //     batch = new vector<Txn*>();
+  //     startTime = GetTime();
+  //   }
+  //   if (prev_batch_finished and batch_list.Size()>0) {
+  //     vector<Txn*> *next_batch;
+  //     batch_list.Pop(&next_batch);
+  //     prev_batch_finished = false;
+  //     pthread_t start_batch;
+  //     StrifeHandler h;
+  //     h.batch = next_batch;
+  //     h.p = this;
+  //     pthread_create(&start_batch, NULL, StartBatch, reinterpret_cast<void*>(&h));
+  //   }
+  // }
 
+  // vector<Txn*> *batch = new vector<Txn*>();
+  // double duration=0.0001, startTime = GetTime();
   // Txn *txn;
   // while (tp_.Active()) {
   //   if (txn_requests_.Pop(&txn))
@@ -1142,7 +1198,6 @@ void TxnProcessor::RunStrifeScheduler() {
   vector<Txn*> batch;
   double duration = 0.0001;
   double startTime = GetTime();
-
   Txn *txn;
   while (tp_.Active()) {
     if (txn_requests_.Pop(&txn)) {

@@ -123,16 +123,18 @@ void StrifeConflictFree2(AtomicQueue<Txn*> *cluster, atomic_int *counter);
 
 void StrifeConflictFree3(AtomicQueue<AtomicQueue<Txn*> *> *worklist, atomic_int *counter);
 
-void StrifeResidual(AtomicQueue<Txn*> *residuals);
+void StrifeResidual(queue<Txn*> *residuals);
 
 static void* StartStrife(void*);
 void HandleBatches();
+static void* StartBatch(void *arg);
 
 // Strife specific variables
 int k;
 double alpha;
 uintptr_t M;
 AtomicQueue<vector<Txn*>* > batch_list;
+bool prev_batch_finished = true;
 
 // Concurrency control mechanism the TxnProcessor is currently using.
 CCMode mode_;

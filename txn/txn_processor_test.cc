@@ -80,7 +80,7 @@ void Benchmark(const vector<LoadGen*>& lg) {
   deque<Txn*> doneTxns;
 
   // For each MODE...
-  for (CCMode mode = STRIFE;
+  for (CCMode mode = SERIAL;
       mode <= STRIFE;
       mode = static_cast<CCMode>(mode+1)) {
     // Print out mode name.
@@ -97,38 +97,48 @@ void Benchmark(const vector<LoadGen*>& lg) {
         TxnProcessor* p = new TxnProcessor(mode);
 
         // Record start time.
+        // double start = GetTime();
+        // // Start specified number of txns running.
+        // for (int i = 0; i < active_txns; i++)
+        //   p->NewTxnRequest(lg[exp]->NewTxn());
+        // // Keep 100 active txns at all times for the first full second.
+        // while (GetTime() < start + 0.5) {
+        //   Txn* txn = p->GetTxnResult();
+        //   doneTxns.push_back(txn);
+        //   txn_count++;
+        //   p->NewTxnRequest(lg[exp]->NewTxn());
+        // }
+        // // Wait for all of them to finish.
+        // for (int i = 0; i < active_txns; i++) {
+        //   Txn* txn = p->GetTxnResult();
+        //   doneTxns.push_back(txn);
+        //   txn_count++;
+        // }
+
+        int num_txns = 5000;
         double start = GetTime();
-
-        // Start specified number of txns running.
-        for (int i = 0; i < active_txns; i++)
-          p->NewTxnRequest(lg[exp]->NewTxn());
-
-        // Keep 100 active txns at all times for the first full second.
-        while (GetTime() < start + 0.5) {
-          Txn* txn = p->GetTxnResult();
-          doneTxns.push_back(txn);
-          txn_count++;
+        for (int i=1; i<=num_txns; i++) {
           p->NewTxnRequest(lg[exp]->NewTxn());
         }
-
-        // Wait for all of them to finish.
-        for (int i = 0; i < active_txns; i++) {
-          Txn* txn = p->GetTxnResult();
-          doneTxns.push_back(txn);
-          txn_count++;
+        for (int i=0; i<num_txns; i++) {
+          Txn *t = p->GetTxnResult();
+          delete t;
         }
-// cout<<"txn count:"<<txn_count<<endl;
-        // Record end time.
         double end = GetTime();
+        throughput[round] = num_txns / (end-start);
 
-        throughput[round] = txn_count / (end-start);
-// cout<<doneTxns.size()<<"-----------"<<endl;
-        for (auto it = doneTxns.begin(); it != doneTxns.end(); ++it) {
-          // cout<<*it<<endl;
-            delete *it;
-        }
 
-        doneTxns.clear();
+        // Record end time.
+        // double end = GetTime();
+
+        // throughput[round] = txn_count / (end-start);
+
+        // for (auto it = doneTxns.begin(); it != doneTxns.end(); ++it) {
+        //   // cout<<*it<<endl;
+        //     delete *it;
+        // }
+
+        // doneTxns.clear();
         delete p;
       }
 
@@ -157,67 +167,53 @@ int main(int argc, char** argv) {
 
 
   // TxnProcessor *p = new TxnProcessor(STRIFE);
-
-  // for (int i=1; i<=50; i++) {
-  //   Txn *t = new RMW(100, 0, 1, 0.0001);
-  //   if (i%10==0) {
-  //     sleep(0.25);
-  //   }
+  // int num_txns = 5000;
+  // double start = GetTime();
+  // for (int i=1; i<=num_txns; i++) {
+  //   Txn *t = new RMW(1000000, 30, 0, 0.0001);
   //   p->NewTxnRequest(t);
   // }
-  // // cout<<"----------"<<endl;
-  // for (int i=0; i<50; i++) {
-  //   // cout<<"i: "<<i<<endl;
+  // for (int i=0; i<num_txns; i++) {
   //   Txn *t = p->GetTxnResult();
-  //   // cout<<t<<endl;
   //   delete t;
   // }
-  // delete p;
-
-  // Txn *t1 = new RMW(0, 0, 0, 0.0001);
-  // t1->writeset_.insert(10);
-  // Txn *t2 = new RMW(0, 0, 0, 0.0001);
-  // t1->writeset_.insert(20);
-  // Txn *t3 = new RMW(0, 0, 0, 0.0001);
-  // t1->writeset_.insert(30);
-  // Txn *t4 = new RMW(0, 0, 0, 0.0001);
-  // t1->writeset_.insert(40);
-
-  // Txn *t5 = new RMW(0, 0, 0, 0.0001);
-  // t2->writeset_.insert(60);
-  // Txn *t6 = new RMW(0, 0, 0, 0.0001);
-  // t2->writeset_.insert(70);
-  // Txn *t7 = new RMW(0, 0, 0, 0.0001);
-  // t2->writeset_.insert(80);
-  // Txn *t8 = new RMW(0, 0, 0, 0.0001);
-  // t2->writeset_.insert(90);
- 
-  // Txn *t3 = new RMW(0, 0, 0, 0.0001);
-  // t3->writeset_.insert(30);
-  // t3->writeset_.insert(40);
-  // t3->writeset_.insert(50);
-  // t3->writeset_.insert(60);
-
-  // p->NewTxnRequest(t1);
-  // p->NewTxnRequest(t2);
+  // double end = GetTime();
   // sleep(1);
-  // p->NewTxnRequest(t3);
-  // t1 = p->GetTxnResult();
-  // t2 = p->GetTxnResult();
-  // t3 = p->GetTxnResult();
-
-  // delete t1;
-  // delete t2;
-  // delete t3;
+  // cout<<"throughput: "<<num_txns/(end-start)<<endl<<flush;
   // delete p;
+
+
+
+  // vector<LoadGen*> lg;
+
+  // cout << "Low contention read-only (5 records)" << endl;
+  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
+  // // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.001));
+  // // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.01));
+
+  // Benchmark(lg);
+
+  // for (uint32 i = 0; i < lg.size(); i++)
+  //   delete lg[i];
+
+  // lg.clear();
+
+
+
+
+
+
+
+
+
 
 
   vector<LoadGen*> lg;
 
-  cout << "Low contention read-only (5 records)" << endl;
+  cout << "'Low contention' Read only (5 records)" << endl;
   lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
-  // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.001));
-  // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.01));
+  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
+  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.01));
 
   Benchmark(lg);
 
@@ -226,118 +222,94 @@ int main(int argc, char** argv) {
 
   lg.clear();
 
+  cout << "'Low contention' Read only (30 records) " << endl;
+  lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.0001));
+  // lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.001));
+  // lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.01));
 
+  Benchmark(lg);
 
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
+  cout << "'High contention' Read only (5 records)" << endl;
+  lg.push_back(new RMWLoadGen(100, 5, 0, 0.0001));
+  // lg.push_back(new RMWLoadGen(100, 5, 0, 0.001));
+  // lg.push_back(new RMWLoadGen(100, 5, 0, 0.01));
 
+  Benchmark(lg);
 
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
+  cout << "'High contention' Read only (30 records)" << endl;
+  lg.push_back(new RMWLoadGen(100, 30, 0, 0.0001));
+  // lg.push_back(new RMWLoadGen(100, 30, 0, 0.001));
+  // lg.push_back(new RMWLoadGen(100, 30, 0, 0.01));
 
+  Benchmark(lg);
 
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
+  cout << "Low contention read-write (5 records)" << endl;
+  lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.0001));
+  // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.001));
+  // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.01));
 
-  // vector<LoadGen*> lg;
+  Benchmark(lg);
 
-  // cout << "'Low contention' Read only (5 records)" << endl;
-  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
-  // // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
-  // // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.01));
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
-  // Benchmark(lg);
+  cout << "Low contention read-write (10 records)" << endl;
+  lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.0001));
+  // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.001));
+  // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.01));
 
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
+  Benchmark(lg);
 
-  // lg.clear();
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
-  // cout << "'Low contention' Read only (30 records) " << endl;
-  // lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.0001));
-  // // lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.001));
-  // // lg.push_back(new RMWLoadGen(1000000, 30, 0, 0.01));
+  cout << "High contention read-write (5 records)" << endl;
+  lg.push_back(new RMWLoadGen(100, 0, 5, 0.0001));
+  // lg.push_back(new RMWLoadGen(100, 0, 5, 0.001));
+  // lg.push_back(new RMWLoadGen(100, 0, 5, 0.01));
 
-  // Benchmark(lg);
+  Benchmark(lg);
 
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
-  // cout << "'High contention' Read only (5 records)" << endl;
-  // lg.push_back(new RMWLoadGen(100, 5, 0, 0.0001));
-  // // lg.push_back(new RMWLoadGen(100, 5, 0, 0.001));
-  // // lg.push_back(new RMWLoadGen(100, 5, 0, 0.01));
+  cout << "High contention read-write (10 records)" << endl;
+  lg.push_back(new RMWLoadGen(100, 0, 10, 0.0001));
+  // lg.push_back(new RMWLoadGen(100, 0, 10, 0.001));
+  // lg.push_back(new RMWLoadGen(100, 0, 10, 0.01));
 
-  // Benchmark(lg);
+  Benchmark(lg);
 
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 
-  // cout << "'High contention' Read only (30 records)" << endl;
-  // lg.push_back(new RMWLoadGen(100, 30, 0, 0.0001));
-  // // lg.push_back(new RMWLoadGen(100, 30, 0, 0.001));
-  // // lg.push_back(new RMWLoadGen(100, 30, 0, 0.01));
+  // 80% of transactions are READ only transactions and run for the full
+  // transaction duration. The rest are very fast (< 0.1ms), high-contention
+  // updates.
+  cout << "High contention mixed read only/read-write " << endl;
+  lg.push_back(new RMWLoadGen2(50, 30, 10, 0.0001));
+  // lg.push_back(new RMWLoadGen2(50, 30, 10, 0.001));
+  // lg.push_back(new RMWLoadGen2(50, 30, 10, 0.01));
 
-  // Benchmark(lg);
+  Benchmark(lg);
 
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
-
-  // cout << "Low contention read-write (5 records)" << endl;
-  // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.0001));
-  // // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.001));
-  // // lg.push_back(new RMWLoadGen(1000000, 0, 5, 0.01));
-
-  // Benchmark(lg);
-
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
-
-  // cout << "Low contention read-write (10 records)" << endl;
-  // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.0001));
-  // // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.001));
-  // // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.01));
-
-  // Benchmark(lg);
-
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
-
-  // cout << "High contention read-write (5 records)" << endl;
-  // lg.push_back(new RMWLoadGen(100, 0, 5, 0.0001));
-  // // lg.push_back(new RMWLoadGen(100, 0, 5, 0.001));
-  // // lg.push_back(new RMWLoadGen(100, 0, 5, 0.01));
-
-  // Benchmark(lg);
-
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
-
-  // cout << "High contention read-write (10 records)" << endl;
-  // lg.push_back(new RMWLoadGen(100, 0, 10, 0.0001));
-  // // lg.push_back(new RMWLoadGen(100, 0, 10, 0.001));
-  // // lg.push_back(new RMWLoadGen(100, 0, 10, 0.01));
-
-  // Benchmark(lg);
-
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
-
-  // // 80% of transactions are READ only transactions and run for the full
-  // // transaction duration. The rest are very fast (< 0.1ms), high-contention
-  // // updates.
-  // cout << "High contention mixed read only/read-write " << endl;
-  // lg.push_back(new RMWLoadGen2(50, 30, 10, 0.0001));
-  // // lg.push_back(new RMWLoadGen2(50, 30, 10, 0.001));
-  // // lg.push_back(new RMWLoadGen2(50, 30, 10, 0.01));
-
-  // Benchmark(lg);
-
-  // for (uint32 i = 0; i < lg.size(); i++)
-  //   delete lg[i];
-  // lg.clear();
+  for (uint32 i = 0; i < lg.size(); i++)
+    delete lg[i];
+  lg.clear();
 }
