@@ -17,8 +17,8 @@ typedef struct handler {
   vector<Txn*> *batch;
 } StrifeHandler;
 
-TxnProcessor::TxnProcessor(CCMode mode)
-    : mode_(mode), tp_(THREAD_COUNT), next_unique_id_(1) {
+TxnProcessor::TxnProcessor(CCMode mode, int k_, double alpha_)
+    : mode_(mode), tp_(THREAD_COUNT), next_unique_id_(1), k(k_), alpha(alpha_) {
   if (mode_ == LOCKING_EXCLUSIVE_ONLY)
     lm_ = new LockManagerA(&ready_txns_);
   else if (mode_ == LOCKING || mode_ == STRIFE)
@@ -29,8 +29,6 @@ TxnProcessor::TxnProcessor(CCMode mode)
     storage_ = new MVCCStorage();
   } else if (mode_ == STRIFE) {
     storage_ = new StrifeStorage();
-    k = 23;
-    alpha = 0.8;
   } else {
     storage_ = new Storage();
   }
@@ -888,7 +886,6 @@ double t2 = GetTime();
   set<Cluster*> special;
 
   for (int a=0; a<k; a++) {
-
     Txn *t = batch->at(gen(rng));
     set<Cluster*> C,S;
     for (auto it=t->writeset_.begin(); it != t->writeset_.end(); ++it) {
@@ -978,23 +975,15 @@ double t5 = GetTime();
   }
   
   while (counter < worklist_size);
-double t7 = GetTime();
-
-  // for (auto it=worklist.begin(); it != worklist.end(); ++it) {
-  //   tp_.RunTask(new Method<TxnProcessor, void, queue<Txn*>*, atomic_int*>(
-  //         this,
-  //         &TxnProcessor::StrifeConflictFree,
-  //         &(it->second.queue_), &counter));
-  // }
-  // int worklist_size = worklist.size();
-  // while (counter < worklist_size);
+  double t7 = GetTime();
 
   
   //RESIDUALS
   
   StrifeResidual(&(residuals.queue_));
   double t8 = GetTime();
-  prev_batch_finished = true;
+  // processing_time += (t6-t1);
+  // prev_batch_finished = true;
 
   // double prepare = t2-t1;
   // double spot = t3-t2;
@@ -1005,15 +994,13 @@ double t7 = GetTime();
   // double residual = t8-t7;
   // double total = t8-t1;
 
-  // t1++, t2++, t3++, t4++, t5++, t6++;
-
-  // cout<<"prepare: "<<prepare/total<<endl<<flush;
-  // cout<<"spot: "<<spot/total<<endl<<flush;
-  // cout<<"fuse: "<<fuse/total<<endl<<flush;
-  // cout<<"merge: "<<merge/total<<endl<<flush;
-  // cout<<"allocate: "<<allocate/total<<endl<<flush;
-  // cout<<"conflict free: "<<conflict/total<<endl<<flush;
-  // cout<<"residuals: "<<residual/total<<endl<<flush;
+  // cout<<"prepare: "<<prepare<<endl<<flush;
+  // cout<<"spot: "<<spot<<endl<<flush;
+  // cout<<"fuse: "<<fuse<<endl<<flush;
+  // cout<<"merge: "<<merge<<endl<<flush;
+  // cout<<"allocate: "<<allocate<<endl<<flush;
+  // cout<<"conflict free: "<<conflict<<endl<<flush;
+  // cout<<"residuals: "<<residual<<endl<<flush;
   // cout<<"-----------------"<<endl<<flush;
 
 }

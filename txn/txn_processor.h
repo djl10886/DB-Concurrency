@@ -41,7 +41,7 @@ class TxnProcessor {
 public:
 // The TxnProcessor's constructor starts the TxnProcessor running in the
 // background.
-explicit TxnProcessor(CCMode mode);
+explicit TxnProcessor(CCMode mode, int k_ = 0, double alpha_ = 0.0);
 
 // The TxnProcessor's destructor stops all background threads and deallocates
 // all objects currently owned by the TxnProcessor, except for Txn objects.
@@ -60,7 +60,7 @@ void RunScheduler();
 
 static void* StartScheduler(void * arg);
 
-private:
+// private:
 
 // Serial validation
 bool SerialValidate(Txn *txn);
@@ -129,13 +129,6 @@ static void* StartStrife(void*);
 void HandleBatches();
 static void* StartBatch(void *arg);
 
-// Strife specific variables
-int k;
-double alpha;
-uintptr_t M;
-AtomicQueue<vector<Txn*>* > batch_list;
-bool prev_batch_finished = true;
-
 // Concurrency control mechanism the TxnProcessor is currently using.
 CCMode mode_;
 
@@ -148,6 +141,13 @@ Storage* storage_;
 // Next valid unique_id, and a mutex to guard incoming txn requests.
 int next_unique_id_;
 Mutex mutex_;
+
+// Strife specific variables
+int k;
+double alpha, processing_time=0.0;
+uintptr_t M;
+AtomicQueue<vector<Txn*>* > batch_list;
+bool prev_batch_finished = true;
 
 // Queue of incoming transaction requests.
 AtomicQueue<Txn*> txn_requests_;
