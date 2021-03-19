@@ -5,8 +5,12 @@
 #include <map>
 #include <set>
 #include <string>
+#include <stdlib.h>
+#include <time.h>
 
 #include "txn/txn.h"
+
+using namespace std;
 
 // Immediately commits.
 class Noop : public Txn {
@@ -147,6 +151,177 @@ class RMW : public Txn {
 
  private:
   double time_;
+};
+
+
+class TPCC : public Txn {
+ public:
+  explicit TPCC(double time = 0) : time_(time) {}
+  TPCC(const set<Key>& writeset, double time = 0) : time_(time) {
+    writeset_ = writeset;
+  }
+  TPCC(const set<Key>& readset, const set<Key>& writeset, double time = 0)
+      : time_(time) {
+    readset_ = readset;
+    writeset_ = writeset;
+  }
+
+  // Constructor with randomized read/write sets
+  TPCC(int dbsize, int readsetsize, int writesetsize, double Time = 0)
+      : time_(Time), dbsize_(dbsize) {
+
+    srand(time(NULL));
+    int txn_type = rand() % 100 + 1;
+    customer_ = dbsize * 0.05, history_ = customer_, oorder_ = customer_;
+    item_ = dbsize * 0.17, stock_ = item_, neworder_ = dbsize*0.01, orderline_ = dbsize*0.5;
+
+    if (txn_type >= 1 and txn_type <= 45)
+      NewOrder();
+    else if (txn_type >= 46 and txn_type <= 88)
+      Payment();
+    else if (txn_type >= 89 and txn_type <= 92)
+      OrderStatus();
+    else if (txn_type >= 93 and txn_type <= 96)
+      Delivery();
+    else
+      StockLevel();
+    
+    // Make sure we can find enough unique keys.
+    // DCHECK(dbsize >= readsetsize + writesetsize);
+
+    // // Find readsetsize unique read keys.
+    // for (int i = 0; i < readsetsize; i++) {
+    //   Key key;
+    //   do {
+    //     key = rand() % dbsize;
+    //   } while (readset_.count(key));
+    //   readset_.insert(key);
+    // }
+
+    // // Find writesetsize unique write keys.
+    // for (int i = 0; i < writesetsize; i++) {
+    //   Key key;
+    //   do {
+    //     key = rand() % dbsize;
+    //   } while (readset_.count(key) || writeset_.count(key));
+    //   writeset_.insert(key);
+    // }
+  }
+
+  TPCC* clone() const {             // Virtual constructor (copying)
+    TPCC* clone = new TPCC(time_);
+    this->CopyTxnInternals(clone);
+    return clone;
+  }
+
+  virtual void Run() {
+    Value result;
+    // Read everything in readset.
+    for (set<Key>::iterator it = readset_.begin(); it != readset_.end(); ++it)
+      Read(*it, &result);
+
+    // Increment length of everything in writeset.
+    for (set<Key>::iterator it = writeset_.begin(); it != writeset_.end();
+         ++it) {
+      result = 0;
+      Read(*it, &result);
+      Write(*it, result + 1);
+    }
+
+    // Run while loop to simulate the txn logic(duration is time_).
+    double begin = GetTime();
+    while (GetTime() - begin < time_) {
+      for (int i = 0;i < 1000; i++) {
+        int x = 100;
+        x = x + 2;
+        x = x*x;
+      }
+    }
+    
+    COMMIT;
+  }
+
+ private:
+  double time_;
+  int dbsize_, customer_, history_, oorder_, item_, stock_, neworder_, orderline_;
+
+  void NewOrder() {
+    readset_.insert(rand()%customer_);
+    readset_.insert(1000010);
+    Key district_key = rand() % 10 + dbsize_;
+    readset_.insert(district_key);
+    writeset_.insert(rand() % neworder_ + (dbsize_*0.27));
+    writeset_.insert(district_key);
+    writeset_.insert(rand() % oorder_ + (dbsize_ * 0.28));
+    readset_.insert(rand() % item_ + (dbsize_ * 0.1));
+    Key stock_key = rand() % stock_ + (dbsize_ * 0.83);
+    readset_.insert(stock_key);
+    writeset_.insert(stock_key);
+    writeset_.insert(rand() % orderline_ + (dbsize_*0.33));
+  }
+
+  void Payment() {
+    writeset_.insert(1000010);
+    readset_.insert(1000010);
+    Key district_key = rand() % 10 + dbsize_;
+    writeset_.insert(district_key);
+    readset_.insert(district_key);
+    Key customer_key = rand()%customer_;
+    writeset_.insert(customer_key);
+    readset_.insert(customer_key);
+    writeset_.insert(rand()%history_ + (dbsize_*0.05));
+  }
+
+  void OrderStatus() {
+    readset_.insert(rand()%oorder_ + (dbsize_*0.28));
+    int num_orderline = rand() % 11 + 5;
+    set<Key> orderline_keys;
+    Key orderline_key;
+    for (int i=0; i<num_orderline; i++) {
+      do {
+        orderline_key = rand() % orderline_ + (dbsize_*0.33);
+      } while (orderline_keys.count(orderline_key));
+      orderline_keys.insert(orderline_key);
+    }
+    readset_.insert(orderline_keys.begin(), orderline_keys.end());
+    readset_.insert(rand()%customer_);
+  }
+
+  void Delivery() {
+    Key neworder_key = rand() % neworder_ + (dbsize_*0.27);
+    readset_.insert(neworder_key);
+    writeset_.insert(neworder_key);
+    Key oorder_key = rand() % oorder_ + (dbsize_*0.28);
+    readset_.insert(oorder_key);
+    writeset_.insert(oorder_key);
+    int num_orderline = rand() % 11 + 5;
+    set<Key> orderline_keys;
+    Key orderline_key;
+    for (int i=0; i<num_orderline; i++) {
+      do {
+        orderline_key = rand() % orderline_ + (dbsize_*0.33);
+      } while (orderline_keys.count(orderline_key));
+      orderline_keys.insert(orderline_key);
+    }
+    readset_.insert(orderline_keys.begin(), orderline_keys.end());
+    writeset_.insert(orderline_keys.begin(), orderline_keys.end());
+    writeset_.insert(rand() % customer_);
+  }
+
+  void StockLevel() {
+    readset_.insert(rand() % 10 + dbsize_);
+    int num_orderline = rand() % 21 + 1;
+    set<Key> orderline_keys;
+    Key orderline_key;
+    for (int i=0; i<num_orderline; i++) {
+      do {
+        orderline_key = rand() % orderline_ + (dbsize_*0.33);
+      } while (orderline_keys.count(orderline_key));
+      orderline_keys.insert(orderline_key);
+    }
+    readset_.insert(orderline_keys.begin(), orderline_keys.end());
+    readset_.insert(rand() % stock_ + (dbsize_*0.83));
+  }
 };
 
 #endif  // _TXN_TYPES_H_

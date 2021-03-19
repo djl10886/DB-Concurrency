@@ -4,7 +4,7 @@
 
 // Init the storage
 void MVCCStorage::InitStorage() {
-  for (int i = 0; i < 1000000;i++) {
+  for (int i = 0; i < 1000011;i++) {
     Write(i, 0, 0);
     Mutex* key_mutex = new Mutex();
     mutexs_[i] = key_mutex;

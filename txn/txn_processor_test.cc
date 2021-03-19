@@ -38,7 +38,7 @@ class RMWLoadGen : public LoadGen {
   }
 
   virtual Txn* NewTxn() {
-    return new RMW(dbsize_, rsetsize_, wsetsize_, wait_time_);
+    return new TPCC(dbsize_, rsetsize_, wsetsize_, wait_time_);
   }
 
  private:
@@ -81,7 +81,7 @@ void Benchmark(const vector<LoadGen*>& lg, int num_txns) {
 
   // For each MODE...
   for (CCMode mode = LOCKING;
-      mode <= STRIFE;
+      mode <= LOCKING;
       mode = static_cast<CCMode>(mode+1)) {
     // Print out mode name.
     cout << ModeToString(mode) << flush;
@@ -218,15 +218,14 @@ int main(int argc, char** argv) {
   // delete p;
 
 
-
   vector<LoadGen*> lg;
 
   // cout << "Low contention read-only (5 records)" << endl;
-  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
-  lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
+  lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
+  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
   // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.01));
 
-  Benchmark(lg, 5000);
+  Benchmark(lg, 50);
   // TestStrife(lg);
 
   for (uint32 i = 0; i < lg.size(); i++)

@@ -23,7 +23,7 @@ uintptr_t StrifeStorage::getM() {
 }
 
 void StrifeStorage::InitStorage() {
-    for (int i = 0; i < 1000000;i++) {
+    for (int i = 0; i < 1000011;i++) {
         Cluster *c = new Cluster();
         c->value = i;
         c->parent = c;
