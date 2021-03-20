@@ -167,10 +167,10 @@ class TPCC : public Txn {
   }
 
   // Constructor with randomized read/write sets
-  TPCC(int dbsize, int readsetsize, int writesetsize, double Time = 0)
+  TPCC(int dbsize, double Time = 0)
       : time_(Time), dbsize_(dbsize) {
 
-    srand(time(NULL));
+    // srand(time(NULL));
     int txn_type = rand() % 100 + 1;
     customer_ = dbsize * 0.05, history_ = customer_, oorder_ = customer_;
     item_ = dbsize * 0.17, stock_ = item_, neworder_ = dbsize*0.01, orderline_ = dbsize*0.5;
@@ -185,27 +185,6 @@ class TPCC : public Txn {
       Delivery();
     else
       StockLevel();
-    
-    // Make sure we can find enough unique keys.
-    // DCHECK(dbsize >= readsetsize + writesetsize);
-
-    // // Find readsetsize unique read keys.
-    // for (int i = 0; i < readsetsize; i++) {
-    //   Key key;
-    //   do {
-    //     key = rand() % dbsize;
-    //   } while (readset_.count(key));
-    //   readset_.insert(key);
-    // }
-
-    // // Find writesetsize unique write keys.
-    // for (int i = 0; i < writesetsize; i++) {
-    //   Key key;
-    //   do {
-    //     key = rand() % dbsize;
-    //   } while (readset_.count(key) || writeset_.count(key));
-    //   writeset_.insert(key);
-    // }
   }
 
   TPCC* clone() const {             // Virtual constructor (copying)
@@ -251,24 +230,24 @@ class TPCC : public Txn {
     Key district_key = rand() % 10 + dbsize_;
     readset_.insert(district_key);
     writeset_.insert(rand() % neworder_ + (dbsize_*0.27));
-    writeset_.insert(district_key);
+    writeset_.insert(district_key-1);
     writeset_.insert(rand() % oorder_ + (dbsize_ * 0.28));
     readset_.insert(rand() % item_ + (dbsize_ * 0.1));
     Key stock_key = rand() % stock_ + (dbsize_ * 0.83);
     readset_.insert(stock_key);
-    writeset_.insert(stock_key);
+    writeset_.insert(stock_key-1);
     writeset_.insert(rand() % orderline_ + (dbsize_*0.33));
   }
 
   void Payment() {
     writeset_.insert(1000010);
-    readset_.insert(1000010);
+    // readset_.insert(1000010);
     Key district_key = rand() % 10 + dbsize_;
     writeset_.insert(district_key);
-    readset_.insert(district_key);
+    readset_.insert(district_key-1);
     Key customer_key = rand()%customer_;
     writeset_.insert(customer_key);
-    readset_.insert(customer_key);
+    readset_.insert(customer_key+1);
     writeset_.insert(rand()%history_ + (dbsize_*0.05));
   }
 
@@ -289,11 +268,11 @@ class TPCC : public Txn {
 
   void Delivery() {
     Key neworder_key = rand() % neworder_ + (dbsize_*0.27);
-    readset_.insert(neworder_key);
     writeset_.insert(neworder_key);
+    readset_.insert(neworder_key+1);
     Key oorder_key = rand() % oorder_ + (dbsize_*0.28);
-    readset_.insert(oorder_key);
     writeset_.insert(oorder_key);
+    readset_.insert(oorder_key+1);
     int num_orderline = rand() % 11 + 5;
     set<Key> orderline_keys;
     Key orderline_key;
@@ -303,7 +282,7 @@ class TPCC : public Txn {
       } while (orderline_keys.count(orderline_key));
       orderline_keys.insert(orderline_key);
     }
-    readset_.insert(orderline_keys.begin(), orderline_keys.end());
+    // readset_.insert(orderline_keys.begin(), orderline_keys.end());
     writeset_.insert(orderline_keys.begin(), orderline_keys.end());
     writeset_.insert(rand() % customer_);
   }

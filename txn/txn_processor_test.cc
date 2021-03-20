@@ -38,13 +38,29 @@ class RMWLoadGen : public LoadGen {
   }
 
   virtual Txn* NewTxn() {
-    return new TPCC(dbsize_, rsetsize_, wsetsize_, wait_time_);
+    return new RMW(dbsize_, rsetsize_, wsetsize_, wait_time_);
   }
 
  private:
   int dbsize_;
   int rsetsize_;
   int wsetsize_;
+  double wait_time_;
+};
+
+class TPCCLoadGen : public LoadGen {
+ public:
+  TPCCLoadGen(int dbsize, double wait_time)
+    : dbsize_(dbsize),
+      wait_time_(wait_time) {
+  }
+
+  virtual Txn* NewTxn() {
+    return new TPCC(dbsize_, wait_time_);
+  }
+
+ private:
+  int dbsize_;
   double wait_time_;
 };
 
@@ -81,7 +97,7 @@ void Benchmark(const vector<LoadGen*>& lg, int num_txns) {
 
   // For each MODE...
   for (CCMode mode = LOCKING;
-      mode <= LOCKING;
+      mode <= STRIFE;
       mode = static_cast<CCMode>(mode+1)) {
     // Print out mode name.
     cout << ModeToString(mode) << flush;
@@ -200,20 +216,21 @@ int main(int argc, char** argv) {
 
 
 
-  // TxnProcessor *p = new TxnProcessor(STRIFE, 50, 0.5);
+  // TxnProcessor *p = new TxnProcessor(OCC, 50, 0.5);
   // int num_txns = 5000;
   // double start = GetTime();
   // for (int i=1; i<=num_txns; i++) {
-  //   Txn *t = new RMW(100, 0, 5, 0.0001);
+  //   Txn *t = new TPCC(1000000, 0, 5, 0.0001);
   //   p->NewTxnRequest(t);
   // }
   // for (int i=0; i<num_txns; i++) {
+  //   // cout<<"reached here"<<endl;
   //   Txn *t = p->GetTxnResult();
   //   delete t;
   // }
   // double end = GetTime();
-  // cout<<"total time: "<<(end-start)<<endl;
-  // cout<<"processing time: "<<p->processing_time<<endl;
+  // // cout<<"total time: "<<(end-start)<<endl;
+  // // cout<<"processing time: "<<p->processing_time<<endl;
   // cout<<"throughput: "<<num_txns/(end-start)<<endl<<flush;
   // delete p;
 
@@ -221,11 +238,12 @@ int main(int argc, char** argv) {
   vector<LoadGen*> lg;
 
   // cout << "Low contention read-only (5 records)" << endl;
-  lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
+  // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
   // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
   // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.01));
+  lg.push_back(new TPCCLoadGen(1000000, 0.0001));
 
-  Benchmark(lg, 50);
+  Benchmark(lg, 5000);
   // TestStrife(lg);
 
   for (uint32 i = 0; i < lg.size(); i++)
