@@ -176,16 +176,18 @@ class TPCC : public Txn {
     customer_ = dbsize * 0.05, history_ = customer_, oorder_ = customer_;
     item_ = dbsize * 0.17, stock_ = item_, neworder_ = dbsize*0.01, orderline_ = dbsize*0.5;
 
-    if (txn_type >= 1 and txn_type <= 45)
+    if (txn_type >= 1 and txn_type <= 50)
       NewOrder();
-    else if (txn_type >= 46 and txn_type <= 88)
-      Payment();
-    else if (txn_type >= 89 and txn_type <= 92)
-      OrderStatus();
-    else if (txn_type >= 93 and txn_type <= 96)
-      Delivery();
     else
-      StockLevel();
+      Payment();
+    // else if (txn_type >= 46 and txn_type <= 88)
+    //   Payment();
+    // else if (txn_type >= 89 and txn_type <= 92)
+    //   OrderStatus();
+    // else if (txn_type >= 93 and txn_type <= 96)
+    //   Delivery();
+    // else
+    //   StockLevel();
   }
 
   TPCC* clone() const {             // Virtual constructor (copying)

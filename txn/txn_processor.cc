@@ -10,7 +10,7 @@
 using namespace std;
 
 // Thread & queue counts for StaticThreadPool initialization.
-#define THREAD_COUNT 7
+#define THREAD_COUNT 8
 
 typedef struct handler {
   TxnProcessor *p;
@@ -828,7 +828,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
     chunks[i%THREAD_COUNT].push_back(t);
   }
 
-  double t1 = GetTime();
+  // double t1 = GetTime();
   atomic_int counter(0); // used to keep track of how many subtasks in the parallel steps have finished
 
   //PREPARE
@@ -842,7 +842,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   while (counter < THREAD_COUNT);
 
   //SPOT
-double t2 = GetTime();
+// double t2 = GetTime();
   random_device dev;
   mt19937 rng(dev());
   uniform_int_distribution<mt19937::result_type> gen(0,size-1);
@@ -876,7 +876,7 @@ double t2 = GetTime();
       special.insert(c);
     }
   }
-double t3 = GetTime();
+// double t3 = GetTime();
   //FUSE
   counter = 0;
   atomic_int count[k][k] = {};
@@ -888,7 +888,7 @@ double t3 = GetTime();
   }
 
   while (counter < THREAD_COUNT);
-double t4 = GetTime();
+// double t4 = GetTime();
   //MERGE
   set<pair<Cluster*, Cluster*> > SpecialxSpecial;
   cartesian_product(&special, &special, &SpecialxSpecial);
@@ -900,6 +900,7 @@ double t4 = GetTime();
       Union(c1, c2);
   }
 
+  // cout<<"special clusters: "<<special.size()<<endl<<flush;
   // cout<<"The root of 10 is "<<Find(storage_->getCluster(10))->value<<endl;
   // cout<<"The root of 20 is "<<Find(storage_->getCluster(20))->value<<endl;
   // cout<<"The root of 30 is "<<Find(storage_->getCluster(30))->value<<endl;
@@ -909,7 +910,7 @@ double t4 = GetTime();
   // cout<<"The root of 70 is "<<Find(storage_->getCluster(70))->value<<endl;
   // cout<<"The root of 80 is "<<Find(storage_->getCluster(80))->value<<endl;
   // cout<<"The root of 90 is "<<Find(storage_->getCluster(90))->value<<endl;
-double t5 = GetTime();
+// double t5 = GetTime();
   //ALLOCATE
   counter = 0;
   unordered_map<Cluster*, AtomicQueue<Txn*> > worklist;
@@ -925,7 +926,7 @@ double t5 = GetTime();
 
   while (counter < THREAD_COUNT);
 
-  double t6 = GetTime();
+  // double t6 = GetTime();
   //CONFLICT FREE
 
   
@@ -940,13 +941,13 @@ double t5 = GetTime();
   }
   
   while (counter < worklist_size);
-  double t7 = GetTime();
+  // double t7 = GetTime();
 
   
   //RESIDUALS
   
   StrifeResidual(&(residuals.queue_));
-  double t8 = GetTime();
+  // double t8 = GetTime();
   // processing_time += (t6-t1);
   // prev_batch_finished = true;
 

@@ -1,0 +1,4 @@
+workload            Locking         OCC             OCC-P           MVCC            Strife
+Read-only          49630.9         49742.6         48150           46913.8         38333
+Write-only         47849.8         42908.3         44421           40275.7         28832.3
+Mixed               59213.3         58221.8         55648.3         58325.9         40192.6
