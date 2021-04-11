@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "txn/txn.h"
+#include "txn/zipfian.h"
 
 using namespace std;
 
@@ -300,6 +301,126 @@ class TPCC : public Txn {
     }
     readset_.insert(orderline_keys.begin(), orderline_keys.end());
     readset_.insert(rand() % stock_ + (dbsize_*0.83));
+  }
+};
+
+class YCSB : public Txn {
+ public:
+  explicit YCSB(double time = 0) : time_(time) {}
+  YCSB(const set<Key>& writeset, double time = 0) : time_(time) {
+    writeset_ = writeset;
+  }
+  YCSB(const set<Key>& readset, const set<Key>& writeset, double time = 0)
+      : time_(time) {
+    readset_ = readset;
+    writeset_ = writeset;
+  }
+
+  // Constructor with randomized read/write sets
+  YCSB(int dbsize, int txn_size, char workload_type, double Time = 0)
+      : dbsize_(dbsize), txn_size_(txn_size), workload_type_(workload_type), time_(Time) {
+        if (workload_type == 'A')
+          WorkloadA();
+        else if (workload_type == 'B')
+          WorkloadB();
+        else if (workload_type == 'C')
+          WorkloadC();
+        else if (workload_type == 'E')
+          WorkloadE();
+  }
+
+  TPCC* clone() const {             // Virtual constructor (copying)
+    TPCC* clone = new TPCC(time_);
+    this->CopyTxnInternals(clone);
+    return clone;
+  }
+
+  virtual void Run() {
+    Value result;
+    // Read everything in readset.
+    for (set<Key>::iterator it = readset_.begin(); it != readset_.end(); ++it)
+      Read(*it, &result);
+
+    // Increment length of everything in writeset.
+    for (set<Key>::iterator it = writeset_.begin(); it != writeset_.end();
+         ++it) {
+      result = 0;
+      Read(*it, &result);
+      Write(*it, result + 1);
+    }
+
+    // Run while loop to simulate the txn logic(duration is time_).
+    double begin = GetTime();
+    while (GetTime() - begin < time_) {
+      for (int i = 0;i < 1000; i++) {
+        int x = 100;
+        x = x + 2;
+        x = x*x;
+      }
+    }
+    
+    COMMIT;
+  }
+
+ private:
+  int dbsize_, txn_size_;
+  char workload_type_;
+  double time_;
+  
+  
+
+  void WorkloadA() {
+    int num = rand() % 100 + 1;
+    set<Key> *s;
+    if (num >= 1 and num <= 50)
+      s = &readset_;
+    else
+      s = &writeset_;
+    for (int i=0; i<txn_size_; i++) {
+      Key k;
+      do {
+        k = zipf(0.99, dbsize_);
+      } while (s->count(k));
+      s->insert(k);
+    }
+  }
+
+  void WorkloadB() {
+    int num = rand() % 100 + 1;
+    set<Key> *s;
+    if (num >= 1 and num <= 95)
+      s = &readset_;
+    else
+      s = &writeset_;
+    for (int i=0; i<txn_size_; i++) {
+      Key k;
+      do {
+        k = zipf(0.99, dbsize_);
+      } while (s->count(k));
+      s->insert(k);
+    }
+  }
+
+  void WorkloadC() {
+    for (int i=0; i<txn_size_; i++) {
+      Key k;
+      do {
+        k = zipf(0.99, dbsize_);
+      } while (readset_.count(k));
+      readset_.insert(k);
+    }
+  }
+
+  void WorkloadE() {
+    Key start = zipf(0.99, dbsize_);
+    int range = rand() % txn_size_ + 1;
+    for (int i=1; i<=range and (int)(start+i)<dbsize_; i++) {
+      int num = rand() % 100 + 1;
+      if (num >= 1 and num <= 95)
+        readset_.insert(start + i);
+      else
+        writeset_.insert(start + i);
+    }
   }
 };
 

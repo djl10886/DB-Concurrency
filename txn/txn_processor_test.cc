@@ -64,6 +64,23 @@ class TPCCLoadGen : public LoadGen {
   double wait_time_;
 };
 
+class YCSBLoadGen : public LoadGen {
+ public:
+  YCSBLoadGen(int dbsize, int txn_size, char workload_type, double wait_time)
+    : dbsize_(dbsize), txn_size_(txn_size), workload_type_(workload_type),
+      wait_time_(wait_time) {
+  }
+
+  virtual Txn* NewTxn() {
+    return new YCSB(dbsize_, txn_size_, workload_type_, wait_time_);
+  }
+
+ private:
+  int dbsize_, txn_size_;
+  char workload_type_;
+  double wait_time_;
+};
+
 class RMWLoadGen2 : public LoadGen {
  public:
   RMWLoadGen2(int dbsize, int rsetsize, int wsetsize, double wait_time)
@@ -100,7 +117,7 @@ void Benchmark(const vector<LoadGen*>& lg, int num_txns) {
       mode <= STRIFE;
       mode = static_cast<CCMode>(mode+1)) {
     // Print out mode name.
-    cout << ModeToString(mode) << flush;
+    // cout << ModeToString(mode) << flush;
 
     // For each experiment, run 3 times and get the average.
     for (uint32 exp = 0; exp < lg.size(); exp++) {
@@ -162,7 +179,71 @@ void Benchmark(const vector<LoadGen*>& lg, int num_txns) {
       }
 
       // Print throughput
-      cout << "\t" << (throughput[0] + throughput[1]) / 2 << "\t" << flush;
+      cout << "\t\t" << (throughput[0] + throughput[1]) / 2 << flush;
+    }
+
+    
+  }
+  cout << endl;
+}
+
+void Benchmark2(const vector<LoadGen*>& lg, int num_txns) {
+  // Number of transaction requests that can be active at any given time.
+  int active_txns = num_txns;
+  deque<Txn*> doneTxns;
+
+  // For each MODE...
+  for (CCMode mode = LOCKING;
+      mode <= P_OCC;
+      mode = static_cast<CCMode>(mode+1)) {
+    // Print out mode name.
+    cout << ModeToString(mode) << endl<< flush;
+
+    for (uint32 exp = 0; exp < lg.size(); exp++) {
+
+        int txn_count = 0;
+
+        // Create TxnProcessor in next mode.
+        TxnProcessor* p;
+        if (mode == STRIFE)
+          p = new TxnProcessor(mode, 50, 0.5);
+        else
+          p = new TxnProcessor(mode);
+
+        // Record start time.
+        double start = GetTime();
+        // Start specified number of txns running.
+        for (int i = 0; i < active_txns; i++)
+          p->NewTxnRequest(lg[exp]->NewTxn());
+        // keep running txns for a number of seconds and print throughput each second
+        double prev=GetTime(), curr, end = start + 3;
+        while ((curr = GetTime()) < end) {
+          if (curr - prev >= 1) {
+            double throughput = txn_count / (curr-start);
+            cout<<"throughput: "<<throughput<<endl;
+            prev = curr;
+          }
+          Txn* txn = p->GetTxnResult();
+          doneTxns.push_back(txn);
+          txn_count++;
+          p->NewTxnRequest(lg[exp]->NewTxn());
+        }
+        double throughput = txn_count / (curr-start);
+        cout<<"throughput: "<<throughput<<endl;
+        // Wait for all of them to finish.
+        for (int i = 0; i < active_txns; i++) {
+          Txn* txn = p->GetTxnResult();
+          doneTxns.push_back(txn);
+          txn_count++;
+        }
+
+        for (auto it = doneTxns.begin(); it != doneTxns.end(); ++it) {
+          // cout<<*it<<endl;
+            delete *it;
+        }
+
+        doneTxns.clear();
+        delete p;
     }
 
     cout << endl;
@@ -201,9 +282,9 @@ void TestStrife(const vector<LoadGen*>& lg, int num_txns) {
 }
 
 int main(int argc, char** argv) {
-  cout << "\t\t\t    Average Transaction Duration" << endl;
-  cout << "\t\t0.1ms\t\t1ms\t\t10ms";
-  cout << endl;
+  // cout << "\t\t\t    Average Transaction Duration" << endl;
+  // cout << "\t\t0.1ms\t\t1ms\t\t10ms";
+  // cout << endl;
 
   cpu_set_t cs;
   CPU_ZERO(&cs);
@@ -214,7 +295,7 @@ int main(int argc, char** argv) {
     assert(false);
   }
 
-
+  cout << "workload\tLocking\t\tOCC\t\tOCC-P\t\tMVCC\t\tStrife"<<endl;
 
   // TxnProcessor *p = new TxnProcessor(OCC, 50, 0.5);
   // int num_txns = 5000;
@@ -241,7 +322,8 @@ int main(int argc, char** argv) {
   // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.0001));
   // lg.push_back(new RMWLoadGen(1000000, 5, 0, 0.001));
   // lg.push_back(new RMWLoadGen(1000000, 0, 10, 0.01));
-  lg.push_back(new TPCCLoadGen(1000000, 0.0001));
+  lg.push_back(new YCSBLoadGen(1000000, 10, 'A', 0.0001));
+  cout<<"YCSB";
 
   Benchmark(lg, 5000);
   // TestStrife(lg);
@@ -250,10 +332,6 @@ int main(int argc, char** argv) {
     delete lg[i];
 
   lg.clear();
-
-
-
-
 
 
 

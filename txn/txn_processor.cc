@@ -698,41 +698,6 @@ void TxnProcessor::StrifeConflictFree(queue<Txn*> *cluster, atomic_int *counter)
   (*counter)++;
 }
 
-void TxnProcessor::StrifeConflictFree2(AtomicQueue<Txn*> *cluster, atomic_int *counter) {
-  Txn *txn;
-
-  while (cluster->Pop(&txn)) {
-    // printf("%p\n", txn);
-    // fflush(stdout);
-    ExecuteTxn(txn);
-    // Commit/abort txn according to program logic's commit/abort decision.
-    if (txn->Status() == COMPLETED_C) {
-      ApplyWrites(txn);
-      txn->status_ = COMMITTED;
-    } else if (txn->Status() == COMPLETED_A) {
-      txn->status_ = ABORTED;
-    } else {
-      // Invalid TxnStatus!
-      DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
-    }
-    completed_txns_.Pop(&txn);
-    txn_results_.Push(txn);
-  }
-  (*counter)++;
-}
-
-void TxnProcessor::StrifeConflictFree3(AtomicQueue<AtomicQueue<Txn*> *> *worklist, atomic_int *counter) {
-  AtomicQueue<Txn*> *q;
-  while (worklist->Pop(&q)) {
-    Txn *txn;
-    while (q->Pop(&txn)) {
-      ExecuteTxn(txn);
-      txn_results_.Push(txn);
-    }
-    (*counter)++;
-  }
-}
-
 void TxnProcessor::StrifeResidual(queue<Txn*> *residuals) {
   Txn* txn;
   int txns_remaining = residuals->size();
@@ -1005,120 +970,6 @@ double t5 = GetTime();
 
 }
 
-
-void TxnProcessor::StrifeExecuteBatch2(vector<Txn*> *batch) {
-  Txn* txn;
-  int txns_remaining = batch->size();
-  while (txns_remaining>0) {
-
-    if (!batch->empty()) {
-      txn = batch->back();
-      batch->pop_back();
-    // Start processing the next incoming transaction request.
-      bool blocked = false;
-      // Request read locks.
-      for (set<Key>::iterator it = txn->readset_.begin();
-            it != txn->readset_.end(); ++it) {
-        if (!lm_->ReadLock(txn, *it)) {
-          blocked = true;
-          // If readset_.size() + writeset_.size() > 1, and blocked, just abort
-          if (txn->readset_.size() + txn->writeset_.size() > 1) {
-            // Release all locks that already acquired
-            for (set<Key>::iterator it_reads = txn->readset_.begin(); true; ++it_reads) {
-              lm_->Release(txn, *it_reads);
-              if (it_reads == it) {
-                break;
-              }
-            }
-            break;
-          }
-        }
-      }
-          
-      if (blocked == false) {
-        // Request write locks.
-        for (set<Key>::iterator it = txn->writeset_.begin();
-              it != txn->writeset_.end(); ++it) {
-          if (!lm_->WriteLock(txn, *it)) {
-            blocked = true;
-            // If readset_.size() + writeset_.size() > 1, and blocked, just abort
-            if (txn->readset_.size() + txn->writeset_.size() > 1) {
-              // Release all read locks that already acquired
-              for (set<Key>::iterator it_reads = txn->readset_.begin(); it_reads != txn->readset_.end(); ++it_reads) {
-                lm_->Release(txn, *it_reads);
-              }
-              // Release all write locks that already acquired
-              for (set<Key>::iterator it_writes = txn->writeset_.begin(); true; ++it_writes) {
-                lm_->Release(txn, *it_writes);
-                if (it_writes == it) {
-                  break;
-                }
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      // If all read and write locks were immediately acquired, this txn is
-      // ready to be executed. Else, just restart the txn
-      if (blocked == false) {
-        ready_txns_.push_back(txn);
-      } else if (blocked == true && (txn->writeset_.size() + txn->readset_.size() > 1)){
-        // mutex_.Lock();
-        txn->unique_id_ = next_unique_id_;
-        next_unique_id_++;
-        // txn_requests_.Push(txn);
-        // mutex_.Unlock();
-        batch->push_back(txn);
-      }
-    }
-
-    // Process and commit all transactions that have finished running.
-    while (completed_txns_.Pop(&txn)) {
-      // Commit/abort txn according to program logic's commit/abort decision.
-      if (txn->Status() == COMPLETED_C) {
-        ApplyWrites(txn);
-        txn->status_ = COMMITTED;
-      } else if (txn->Status() == COMPLETED_A) {
-        txn->status_ = ABORTED;
-      } else {
-        // Invalid TxnStatus!
-        DIE("Completed residual Txn has invalid TxnStatus: " << txn->Status());
-      }
-      
-      // Release read locks.
-      for (set<Key>::iterator it = txn->readset_.begin();
-           it != txn->readset_.end(); ++it) {
-        lm_->Release(txn, *it);
-      }
-      // Release write locks.
-      for (set<Key>::iterator it = txn->writeset_.begin();
-           it != txn->writeset_.end(); ++it) {
-        lm_->Release(txn, *it);
-      }
-
-      // Return result to client.
-      txn_results_.Push(txn);
-      txns_remaining--;
-    }
-
-    // Start executing all transactions that have newly acquired all their
-    // locks.
-    while (ready_txns_.size()) {
-      // Get next ready txn from the queue.
-      txn = ready_txns_.front();
-      ready_txns_.pop_front();
-
-      // Start txn running in its own thread.
-      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
-            this,
-            &TxnProcessor::ExecuteTxn,
-            txn));
-    }
-  }
-}
-
 void TxnProcessor::HandleBatches() {
   vector<Txn*> *batch;
   while(tp_.Active()) {
@@ -1183,7 +1034,7 @@ void TxnProcessor::RunStrifeScheduler() {
 
 
   vector<Txn*> batch;
-  double duration = 0.0001;
+  double duration = 0.01;
   double startTime = GetTime();
   Txn *txn;
   while (tp_.Active()) {
