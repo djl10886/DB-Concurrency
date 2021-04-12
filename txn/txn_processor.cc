@@ -817,7 +817,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   //split batch into equal chunks for prepare, fuse, allocate steps
   vector<Txn*> chunks[THREAD_COUNT];
   int size = batch->size();
-  // cout<<"batch size: "<<size<<endl;
+  // cout<<"batch size: "<<size<<endl<<flush;
 
   // int limit = size/THREAD_COUNT + 1;
   // for (int i=0; i<THREAD_COUNT; i++)
@@ -828,7 +828,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
     chunks[i%THREAD_COUNT].push_back(t);
   }
 
-  // double t1 = GetTime();
+  double t1 = GetTime();
   atomic_int counter(0); // used to keep track of how many subtasks in the parallel steps have finished
 
   //PREPARE
@@ -876,6 +876,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
       special.insert(c);
     }
   }
+
 // double t3 = GetTime();
   //FUSE
   counter = 0;
@@ -926,7 +927,11 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
 
   while (counter < THREAD_COUNT);
 
+  // cout<<"residuals "<<residuals.Size()<<endl<<flush;
   // double t6 = GetTime();
+  // cout<<"preprocessing time: "<<(t6-t1)<<endl<<flush;
+  // cout<<"clusters: "<<worklist.size()<<endl<<flush;
+  // cout<<"txns in CF: "<<size-residuals.Size()<<endl<<flush;
   //CONFLICT FREE
 
   
@@ -942,12 +947,17 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   
   while (counter < worklist_size);
   // double t7 = GetTime();
+  // cout<<"CF time: "<<(t7-t6)<<endl<<flush;
 
   
   //RESIDUALS
   
   StrifeResidual(&(residuals.queue_));
   // double t8 = GetTime();
+  // cout<<"residual time: "<<(t8-t7)<<endl<<flush;
+  // cout<<"total time: "<<(t8-t1)<<endl<<flush;
+  // cout<<"------------------"<<endl<<flush;
+  
   // processing_time += (t6-t1);
   // prev_batch_finished = true;
 
@@ -1035,7 +1045,7 @@ void TxnProcessor::RunStrifeScheduler() {
 
 
   vector<Txn*> batch;
-  double duration = 0.01;
+  double duration = 0.001;
   double startTime = GetTime();
   Txn *txn;
   while (tp_.Active()) {
