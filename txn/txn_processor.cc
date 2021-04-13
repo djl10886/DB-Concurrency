@@ -957,7 +957,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   // cout<<"residual time: "<<(t8-t7)<<endl<<flush;
   // cout<<"total time: "<<(t8-t1)<<endl<<flush;
   // cout<<"------------------"<<endl<<flush;
-  
+
   // processing_time += (t6-t1);
   // prev_batch_finished = true;
 
@@ -1054,7 +1054,7 @@ void TxnProcessor::RunStrifeScheduler() {
     } 
     // else
     //   StrifeExecuteBatch2(&batch);
-    if (batch.size()>0 && GetTime() - startTime >= duration) {
+    if (GetTime() - startTime >= duration && batch.size()>0) {
       StrifeExecuteBatch(&batch);
       batch.clear();
       startTime = GetTime();
