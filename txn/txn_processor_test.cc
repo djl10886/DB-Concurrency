@@ -117,7 +117,7 @@ class RMWLoadGen3 : public LoadGen {
   }
 
   virtual Txn* NewTxn() {
-    if (rand() % 100 < 90)
+    if (rand() % 100 < 20)
       return new RMW(dbsize_, rsetsize_, 0, wait_time_);
     else
       return new RMW(dbsize_, 0, wsetsize_, wait_time_);
@@ -136,8 +136,8 @@ void Benchmark(const vector<LoadGen*>& lg, int num_txns) {
   deque<Txn*> doneTxns;
 
   // For each MODE...
-  for (CCMode mode = LOCKING;
-      mode <= LOCKING;
+  for (CCMode mode = STRIFE;
+      mode <= STRIFE;
       mode = static_cast<CCMode>(mode+1)) {
     // Print out mode name.
     // cout << ModeToString(mode) << flush;
@@ -480,7 +480,7 @@ int main(int argc, char** argv) {
   // lg.clear();
 
 
-  lg.push_back(new RMWLoadGen3(100, 10, 10, 0.0001));
+  lg.push_back(new RMWLoadGen3(100, 30, 30, 0.0001));
   cout<<"Mixed-write";
   Benchmark(lg, 15000);
   for (uint32 i = 0; i < lg.size(); i++)
