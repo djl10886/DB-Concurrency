@@ -228,17 +228,36 @@ class TPCC : public Txn {
   int dbsize_, customer_, history_, oorder_, item_, stock_, neworder_, orderline_;
 
   void NewOrder() {
+    int num_keys = rand() % 10 + 5;
     readset_.insert(rand()%customer_);
     readset_.insert(1000010);
     Key district_key = rand() % 10 + dbsize_;
-    readset_.insert(district_key);
+    // readset_.insert(district_key);
     writeset_.insert(rand() % neworder_ + (dbsize_*0.27));
-    writeset_.insert(district_key-1);
+    // writeset_.insert(district_key-1);
+    writeset_.insert(district_key);
     writeset_.insert(rand() % oorder_ + (dbsize_ * 0.28));
-    readset_.insert(rand() % item_ + (dbsize_ * 0.1));
-    Key stock_key = rand() % stock_ + (dbsize_ * 0.83);
-    readset_.insert(stock_key);
-    writeset_.insert(stock_key-1);
+    set<Key> keys;
+    Key item_key;
+    for (int i=0; i<num_keys; i++) {
+      do {
+        item_key = rand() % item_ + (dbsize_ * 0.1);
+      } while (keys.count(item_key));
+      keys.insert(item_key);
+    }
+    readset_.insert(keys.begin(), keys.end());
+    // readset_.insert(rand() % item_ + (dbsize_ * 0.1));
+    keys.clear();
+    Key stock_key;
+    for (int i=0; i<num_keys; i++) {
+      do {
+        stock_key = rand() % stock_ + (dbsize_ * 0.83);
+      } while (keys.count(stock_key));
+      keys.insert(stock_key);
+    }
+    writeset_.insert(keys.begin(), keys.end());
+    // Key stock_key = rand() % stock_ + (dbsize_ * 0.83);
+    // writeset_.insert(stock_key);
     writeset_.insert(rand() % orderline_ + (dbsize_*0.33));
   }
 
@@ -247,10 +266,12 @@ class TPCC : public Txn {
     // readset_.insert(1000010);
     Key district_key = rand() % 10 + dbsize_;
     writeset_.insert(district_key);
-    readset_.insert(district_key-1);
+    // readset_.insert(district_key-1);
+    // readset_.insert(district_key);
     Key customer_key = rand()%customer_;
     writeset_.insert(customer_key);
-    readset_.insert(customer_key+1);
+    // readset_.insert(customer_key+1);
+    // readset_.insert(customer_key);
     writeset_.insert(rand()%history_ + (dbsize_*0.05));
   }
 

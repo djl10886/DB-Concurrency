@@ -638,6 +638,7 @@ void TxnProcessor::StrifeFuse(vector<Txn*> *batch, atomic_int *counter, atomic_i
       if (c)
         (c->count)++;
     } else {
+      // cout<<"multiple special clusters"<<endl<<flush;
       set<pair<Cluster*, Cluster*> > SxS;
       cartesian_product(&S, &S, &SxS);
       for (auto it=SxS.begin(); it != SxS.end(); ++it) {
@@ -827,7 +828,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
     Txn *t = batch->at(i);
     chunks[i%THREAD_COUNT].push_back(t);
   }
-
+  
   double t1 = GetTime();
   atomic_int counter(0); // used to keep track of how many subtasks in the parallel steps have finished
 
@@ -841,6 +842,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
 
   while (counter < THREAD_COUNT);
 
+
   //SPOT
 // double t2 = GetTime();
   random_device dev;
@@ -848,8 +850,8 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   uniform_int_distribution<mt19937::result_type> gen(0,size-1);
 
   int i=0, addr_counter = 1;
+  int num_sampled = 0;
   set<Cluster*> special;
-
   for (int a=0; a<k; a++) {
     Txn *t = batch->at(gen(rng));
     set<Cluster*> C,S;
@@ -862,21 +864,26 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
         C.insert(root);
       }
     }
-
     if (S.size() == 0 and C.size()>0) {
+      num_sampled++;
       auto first = C.begin();
-      
       Cluster *c = *first;
       C.erase(first);
       for (auto it=C.begin(); it!=C.end(); ++it)
         c = Union(c, *it);
       c->id = i++;
-      (c->count)++;
+      // (c->count)++;
       c->address = M + (sizeof(Cluster*)*(addr_counter++));
       special.insert(c);
     }
   }
-
+  // cout<<"spot clusters: "<<special.size()<<endl<<flush;
+  // for (auto it = special.begin(); it != special.end(); ++it) {
+  //   Cluster *c = *it;
+  //   cout<<c->value<<endl<<flush;
+  //   cout<<c->parent->value<<endl<<flush;
+  // }
+  // cout<<"-------------"<<endl<<flush;
 // double t3 = GetTime();
   //FUSE
   counter = 0;
@@ -889,6 +896,13 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   }
 
   while (counter < THREAD_COUNT);
+
+  // for (int i=0; i<k; i++) {
+  //   for (int j=0; j<k; j++)
+  //     cout<<"i: "<<i<<" j: "<<j<<", "<<count[i][j]<<endl<<flush;
+  // }
+
+
 // double t4 = GetTime();
   //MERGE
   set<pair<Cluster*, Cluster*> > SpecialxSpecial;
@@ -897,6 +911,7 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
     Cluster *c1 = it->first, *c2 = it->second;
     int n1 = count[c1->id][c2->id];
     int n2 = c1->count + c2->count + n1;
+    // cout<<"n1: "<<n1<<" n2: "<<n2<<endl<<flush;
     if (n1 >= alpha*n2)
       Union(c1, c2);
   }
@@ -926,14 +941,23 @@ void TxnProcessor::StrifeExecuteBatch(vector<Txn*> *batch) {
   }
 
   while (counter < THREAD_COUNT);
-
-  // cout<<"residuals "<<residuals.Size()<<endl<<flush;
+  // cout<<"special clusters: "<<special.size()<<endl<<flush;
+  // cout<<"num clusters: "<<worklist.size()<<endl<<flush;
+  // cout<<"residuals "<<(double)residuals.Size()/size<<endl<<flush;
+  // cout<<"----------"<<endl<<flush;
   // double t6 = GetTime();
   // cout<<"preprocessing time: "<<(t6-t1)<<endl<<flush;
   // cout<<"clusters: "<<worklist.size()<<endl<<flush;
   // cout<<"txns in CF: "<<size-residuals.Size()<<endl<<flush;
   //CONFLICT FREE
 
+  // Txn *a = batch->at(50);
+  // for (auto it=a->writeset_.begin(); it != a->writeset_.end(); ++it) {
+  //   cout<<*it<<endl<<flush;
+  //   Cluster *root = storage_->getCluster(*it);
+  //   cout<<root->value<<endl<<flush;
+  // }
+  // cout<<"--------"<<endl<<flush;
   
   counter = 0;
   int worklist_size = worklist.size();

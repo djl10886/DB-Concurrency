@@ -6,7 +6,8 @@ set key outside
 set rmargin 12
 set xlabel "alpha"
 set ylabel "throughput (txn/sec)"
-plot 'res_param.data' using 2:xtic(1) title columnhead(2), '' using 3:xtic(1) title columnhead(3), '' using 4:xtic(1) title columnhead(4)
+plot 'res_param.data' using 2:xtic(1) title columnhead(2), '' using 3:xtic(1) title columnhead(3), '' using 4:xtic(1) title columnhead(4),\
+        '' using 5:xtic(1) title columnhead(5), '' using 6:xtic(1) title columnhead(6)
 
 
 
