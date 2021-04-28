@@ -1,13 +1,13 @@
 set terminal png
-set output "plots/res_param.png"
+set output "plots/batch_size.png"
 set style data linespoints
 set key samplen 2 font ",10"
 set key outside
 set rmargin 12
-set xlabel "alpha"
+set xlabel "batch size"
 set ylabel "throughput (txn/sec)"
-plot 'res_param.data' using 2:xtic(1) title columnhead(2), '' using 3:xtic(1) title columnhead(3), '' using 4:xtic(1) title columnhead(4),\
-        '' using 5:xtic(1) title columnhead(5), '' using 6:xtic(1) title columnhead(6)
+plot 'batch_size.data' using 2:xtic(1) title columnhead(2), '' using 3:xtic(1) title columnhead(3), '' using 4:xtic(1) title columnhead(4),\
+        '' using 5:xtic(1) title columnhead(5)
 
 
 
